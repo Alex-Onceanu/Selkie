@@ -137,7 +137,8 @@ namespace
 #ifdef __APPLE__
         "VK_KHR_portability_subset",
 #endif
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        "VK_KHR_ray_tracing_pipeline"
         // Mettre ici toutes les extensions Vulkan requises
     };
     
@@ -417,6 +418,8 @@ namespace
         vk::PhysicalDeviceFeatures gpuFeatures;
         gpu.getProperties(&gpuProperties);
         gpu.getFeatures(&gpuFeatures);
+
+        std::cout << "GPU " << gpuProperties.deviceName << " : ";
         
         if(gpuProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
         {
@@ -437,6 +440,7 @@ namespace
         if(not deviceSupportsExtensions(gpu))
         {
             // On a besoin que le gpu supporte toutes les extensions requises
+            std::cout << "does NOT support all extensions :(" << std::endl;
             return 0;
         }
         
@@ -448,7 +452,7 @@ namespace
         
         // imposer ici que le GPU doive supporter certaines fonctionnalités
         // ex : if(not gpuFeatures.geometryShader) return 0;
-        
+        std::cout << "DOES support all extensions :)" << std::endl;
         return score;
     }
     
