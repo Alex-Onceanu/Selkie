@@ -96,11 +96,9 @@ namespace
     vk::Extent2D swapChainExtent;
     std::vector<vk::Image> swapChainImages;
     std::vector<vk::UniqueImageView> swapChainImageViews;
-    vk::RenderPass renderPass; // lien entre résultat du fragment shader et image (color buff) du swapchain
     vk::UniqueDescriptorSetLayout descriptorSetLayout; // description de comment lier l'UBO du CPU avec celui du GPU
     vk::UniquePipelineLayout pipelineLayout; // envoi d'uniform dans les shaders
     vk::UniquePipeline graphicsPipeline;
-    std::vector<vk::UniqueFramebuffer> swapChainFrameBuffers; // à chaque imageview de la swapchain son buffer de rendu
     vk::UniqueCommandPool commandPool;
     vk::UniqueDescriptorPool descriptorPool;
     std::vector<vk::DescriptorSet> descriptorSets;
@@ -420,7 +418,6 @@ namespace
     
     void cleanupSwapChain()
     {
-        swapChainFrameBuffers.clear();   
         swapChainImageViews.clear();
     }
 
@@ -550,30 +547,6 @@ namespace
         return buffer;
     }
     
-    void createFrameBuffers()
-    {
-        for(const auto& imageView : swapChainImageViews)
-        {
-            vk::ImageView attachments[] = { imageView.get() };
-            
-            vk::FramebufferCreateInfo fbCreateInfo{
-                .flags = vk::FramebufferCreateFlags(),
-                .renderPass = renderPass,
-                .attachmentCount = 1,
-                .pAttachments = attachments,
-                .width = swapChainExtent.width,
-                .height = swapChainExtent.height,
-                .layers = 1
-            };
-            
-            try {
-                swapChainFrameBuffers.push_back(logicalDevice->createFramebufferUnique(fbCreateInfo));
-            } catch (vk::SystemError err) {
-                throw std::runtime_error("Failed to create frame buffer.");
-            }
-        }
-    }
-    
     void recreateSwapChain()
     {
         int width = 0, height = 0;
@@ -590,7 +563,6 @@ namespace
         
         createSwapChain();
         createImageViews();
-        createFrameBuffers();
     }
     
     // Objet vulkan contenant le bytecode d'un shader en SPIR-V
@@ -606,61 +578,6 @@ namespace
             return logicalDevice->createShaderModuleUnique(smCreateInfo);
         } catch (vk::SystemError) {
             throw std::runtime_error("Failed to create shader module.");
-        }
-    }
-    
-    void createRenderPass()
-    {
-        // un seul color buffer, une des images du swapchain
-        vk::AttachmentDescription colorAttachment{
-            .format = swapChainImageFormat,
-            .samples = vk::SampleCountFlagBits::e1, // pas de multisampling pour l'instant
-            .loadOp = vk::AttachmentLoadOp::eClear, // clear cette image avant de refaire un rendu
-            .storeOp = vk::AttachmentStoreOp::eStore, // pour qu'on puisse voir le rendu quand même
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare, // pas de stencil buffer pour l'instant
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined, // peu importe dans quel layout était avant ce pass
-            .finalLayout = vk::ImageLayout::ePresentSrcKHR // on compte présenter cette image au swap chain
-        };
-        
-        // un render pass est composé d'un ou plusieurs subpasses (ex : plusieurs couches de post-processing)
-        vk::AttachmentReference colorAttachmentRef{
-            .attachment = 0, // l'index de colorAttachment est 0 (c'est le seul...)
-            .layout = vk::ImageLayout::eColorAttachmentOptimal // on précise que c'est un color buffer
-        };
-        
-        // quand on écrit layout(location = 0) out vec4 outColor dans le fragment shader,
-        // le résultat de outColor sera directement écrit dans subpass.pColorAttachments[0] !
-        vk::SubpassDescription subpass{
-            .pipelineBindPoint = vk::PipelineBindPoint::eGraphics, // c'est un graphics subpass, pas compute
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &colorAttachmentRef
-        };
-        
-        // Attendre le stage "color attachment" (entre vert et frag) pour faire la transition d'image layout
-        // Sinon le ferait "au début de la pipeline", alors qu'on a pas encore d'image techniquement
-        // En gros faut attendre que la swap chain finisse de lire depuis l'image avant qu'on y écrive
-        vk::SubpassDependency dependency {
-            .srcSubpass = VK_SUBPASS_EXTERNAL,
-            .dstSubpass = 0,
-            .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-            .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-            .dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite
-        };
-        
-        vk::RenderPassCreateInfo rpCreateInfo{
-            .attachmentCount = 1,
-            .pAttachments = &colorAttachment,
-            .subpassCount = 1,
-            .pSubpasses = &subpass,
-            .dependencyCount = 1,
-            .pDependencies = &dependency
-        };
-        
-        try {
-            renderPass = logicalDevice->createRenderPass(rpCreateInfo);
-        } catch (vk::SystemError err) {
-            throw std::runtime_error("Failed to create render pass.");
         }
     }
     
@@ -794,8 +711,15 @@ namespace
         };
         
         pipelineLayout = logicalDevice->createPipelineLayoutUnique(plCreateInfo);
+
+        vk::PipelineRenderingCreateInfo prCreateInfo{
+            .colorAttachmentCount = 1,
+            .pColorAttachmentFormats = &swapChainImageFormat,
+            .depthAttachmentFormat = vk::Format::eUndefined
+        };
         
         vk::GraphicsPipelineCreateInfo pipelineCreateInfo{
+            .pNext                  = &prCreateInfo,
             .stageCount             = 2,
             .pStages                = stages, // les 2 shaders
             .pVertexInputState      = &pvisCreateInfo,
@@ -807,10 +731,7 @@ namespace
             .pColorBlendState       = &pcbsCreateInfo,
             .pDynamicState          = &pdsCreateInfo,
             .layout                 = pipelineLayout.get(),
-            .renderPass             = renderPass,
-            .subpass                = 0,
-            .basePipelineHandle     = nullptr
-            // cf dérivée d'une graphics pipeline pour créer une pipeline à partir d'une autre
+            .renderPass             = nullptr
         };
         
         graphicsPipeline = logicalDevice->createGraphicsPipelineUnique(nullptr, pipelineCreateInfo).value;
@@ -848,19 +769,24 @@ namespace
         
         vk::ClearValue clearColor = { std::array<float, 4>{ 0.1f, 0.1f, 0.15f, 0.0f } };
         
-        vk::RenderPassBeginInfo renderPassInfo {
-            .renderPass = renderPass,
-            .framebuffer = swapChainFrameBuffers[imageIndex].get(),
-            .renderArea = {
-                .offset = { 0,0 },
-                .extent = swapChainExtent
-            },
-            .clearValueCount = 1,
-            .pClearValues = &clearColor
+        vk::RenderingAttachmentInfo colorAttachmentInfo = {
+            .imageView = swapChainImageViews[imageIndex].get(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = clearColor
         };
-        
-        // C'est parti pour le renderPass
-        commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+        // The vk::RenderingInfo structure combines these attachments with other rendering parameters.
+        vk::RenderingInfo renderingInfo = {
+            .renderArea = { .offset = { 0, 0 }, .extent = swapChainExtent },
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorAttachmentInfo,
+            .pDepthAttachment = nullptr
+        };
+
+        commandBuffer.beginRendering(renderingInfo);
         
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline.get());
         
@@ -889,8 +815,8 @@ namespace
         
         // nb de vertex, nb d'instances (cf instanced rendering ?), offset pour vertex et instance
         commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-        
-        commandBuffer.endRenderPass();
+
+        commandBuffer.endRendering();
         
         // On a fini d'enregistrer ce qu'on veut que commandBuffer fasse
         commandBuffer.end();
@@ -1175,10 +1101,6 @@ namespace
         
         // Pour chaque image de la swap chain, créer son imageView (comment l'interpréter)
         createImageViews();
-
-        // Spécifier à Vulkan des infos sur les color/depth buffer
-        // À quoi s'attendre en terme de framebuffer
-        createRenderPass();
         
         // Description de comment associer des uniform GLSL à chaque morceau de l'Uniform Buffer Object
         // En fait décrit à quoi va ressembler le descriptor set qui lui contiendra les uniform
@@ -1187,10 +1109,6 @@ namespace
         // Toutes les infos dont vulkan a besoin pour faire le rendu
         // Il faudra instancier une pipeline graphique à chaque fois qu'on veut modifier les shaders
         createGraphicsPipeline();
-        
-        // Pour chaque imageView de la swap chain, créer son framebuffer associé
-        // le lien entre résultat du frag shader et les imageViews se fait sur des framebuffer via renderpass
-        createFrameBuffers();
         
         // Tableau de command buffers. Mais on en a un seul
         createCommandPool();
