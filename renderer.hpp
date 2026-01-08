@@ -4,8 +4,6 @@
 
 #include "math.hpp"
 #include "window.hpp"
-
-// TODO : Changer le nom de ce namespace une fois que j'aurai une idee de nom
 namespace sk
 {
     // constructeur : initialise vulkan et renvoie la fenetre

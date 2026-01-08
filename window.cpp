@@ -80,13 +80,13 @@ std::vector<const char*> sk::Window::getRequiredExtensions()
 }
 
 #ifdef VULKAN_RENDERER
-vk::SurfaceKHR sk::Window::createSurface(VkInstance instance)
+vk::UniqueSurfaceKHR sk::Window::createSurface(VkInstance instance)
 {
     VkSurfaceKHR tmpSurface;
     if(glfwCreateWindowSurface(instance, window, nullptr, &tmpSurface) != VK_SUCCESS)
     {
         throw std::runtime_error("GLFW failed to create window surface !");
     }
-    return vk::SurfaceKHR(tmpSurface);
+    return vk::UniqueSurfaceKHR(vk::SurfaceKHR(tmpSurface), {instance});
 }
 #endif
