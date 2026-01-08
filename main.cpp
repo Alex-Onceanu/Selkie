@@ -9,7 +9,7 @@ int main()
     auto startTime = std::chrono::high_resolution_clock::now();
     try
     {
-        auto window = sk::begin();
+        auto window = sk::initWindow(1366, 768);
 
         while(window->isAlive())
         {
@@ -19,8 +19,6 @@ int main()
             sk::setUniforms(elapsedTime, math::vec3(0.4f, 0.9f, 1.0f));
             sk::draw();
         }
-
-        sk::end();
     }
     catch(const std::exception& e)
     {

@@ -144,12 +144,6 @@ namespace
     };
     
     const int NB_FRAMES_IN_FLIGHT = 2;
-    
-#ifdef DEBUG
-    // Validation layer : couche custom de debug pour pas que ça plante sans savoir pk
-    std::vector<const char*> validationLayers{ "VK_LAYER_KHRONOS_validation" };
-    vk::DebugUtilsMessengerEXT debugMessenger;
-#endif
 };
 
 // methodes
@@ -159,110 +153,6 @@ namespace
     {
         windowResized = true;
     }
-
-#ifdef DEBUG
-    void assertValidationLayerSupport()
-    {
-        std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties();
-        
-        // On veut savoir is les validationLayers qu'on souhaite sont bel et bien supportés par vulkan
-        for(const char* vLayer : validationLayers)
-        {
-            std::string svLayer(vLayer);
-            auto str_eq = [&](vk::LayerProperties l){ return svLayer.compare(std::string(l.layerName)); };
-            if(std::find_if_not(availableLayers.begin(), availableLayers.end(), str_eq) == availableLayers.end())
-            {
-                throw std::runtime_error("Unequested validation layer is unavailable : " + svLayer);
-            }
-        }
-        // Ici tout va bien
-    }
-    
-    static VKAPI_ATTR unsigned int VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                        vk::DebugUtilsMessageTypeFlagsEXT messageType,
-                                                        const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                                                        void* pUserData)
-    {
-        // Cette fonction de debug custom sera appelée par Vulkan pour communiquer l'erreur
-        if((VkDebugUtilsMessageSeverityFlagBitsEXT)messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-        {
-            std::cerr   << "!! Cought error through custom validation layer : "
-                        << pCallbackData->pMessage
-                        << std::endl;
-            
-            for(int i = 0; i < pCallbackData->objectCount; i++)
-            {
-                std::cerr   << "Involved vulkan object "
-                            << i + 1
-                            << " :\n\t"
-                            << (pCallbackData->pObjects[i]).pObjectName
-                            << std::endl;
-            }
-        }
-        return VK_FALSE;
-    }
-    
-    // Proxy pour vkCreateDebugUtilsMessengerEXT (sert à créer VkDebugUtilsMessengerEXT) qui n'est pas chargé automatiquement
-    static void createDebugUtilsMessengerEXT(vk::Instance instance,
-                                      const vk::DebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-                                      const vk::AllocationCallbacks* pAllocator,
-                                      vk::DebugUtilsMessengerEXT* pDebugMessenger)
-    {
-        auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-        auto vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
-        if (func != nullptr)
-        {
-            if(func(instance,
-                    (VkDebugUtilsMessengerCreateInfoEXT*)pCreateInfo,
-                    (VkAllocationCallbacks*)pAllocator,
-                    (VkDebugUtilsMessengerEXT *)pDebugMessenger)
-               != VK_SUCCESS)
-            {
-                throw std::runtime_error("vkCreateDebugUtilsMessengerEXT : failed to set up debug messenger !");
-            }
-            return;
-        }
-        throw std::runtime_error("vkCreateDebugUtilsMessengerEXT not found (extension not present)");
-    }
-    
-    // Proxy pour vkDestroyDebugUtilsMessengerEXT (sert à free le debugMessenger)
-    static void destroyDebugUtilsMessengerEXT(vk::Instance instance,
-                                       vk::DebugUtilsMessengerEXT debugMessenger,
-                                       const vk::AllocationCallbacks* pAllocator)
-    {
-        auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-        if(func != nullptr)
-        {
-            func(instance, debugMessenger, (VkAllocationCallbacks*)pAllocator);
-        }
-    }
-    
-    // cf populateDebugMessengerCreateInfo dans le pdf
-    vk::DebugUtilsMessengerCreateInfoEXT createDebugMessengerCreateInfo()
-    {
-        vk::DebugUtilsMessengerCreateInfoEXT createInfo {
-            .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError
-            |   vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning
-            |   vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
-        
-            .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral
-            |   vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance
-            |   vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
-        
-            .pfnUserCallback = debugCallback,
-            .pUserData = nullptr    // ici on peut donner un argument à debugCallback
-        };
-        
-        return createInfo;
-    }
-
-    void setupDebugMessenger()
-    {
-        vk::DebugUtilsMessengerCreateInfoEXT createInfo = createDebugMessengerCreateInfo();
-        createDebugUtilsMessengerEXT(instance.get(), &createInfo, nullptr, &debugMessenger);
-    }
-#endif
     
     void createInstance()
     {
@@ -278,19 +168,8 @@ namespace
         
         vk::InstanceCreateInfo createInfo{ .pApplicationInfo = &appInfo };
 
-#ifdef DEBUG
-        assertValidationLayerSupport();
-        requiredExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-        
-        // Sert pour debug vkCreateInstance
-        auto debugCreateInfo = createDebugMessengerCreateInfo();
-        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
-#else
         createInfo.enabledLayerCount = 0;
         createInfo.pNext = nullptr;
-#endif
 
 #if __APPLE__
         requiredExtensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
@@ -302,8 +181,6 @@ namespace
         
         instance = vk::createInstanceUnique(createInfo);
     }
-
-
     
     SwapChainSupportDetails querySwapChainSupport(const vk::PhysicalDevice& gpu)
     {
@@ -372,9 +249,7 @@ namespace
                 return availableMode;
             }
         }
-#ifdef DEBUG
-        std::cout << "MAILBOX swapchain present mode unavailable, choosing FIFO.." << std::endl;
-#endif
+
         return vk::PresentModeKHR::eFifo;
     }
     
@@ -388,9 +263,6 @@ namespace
                 return availableFormat;
             }
         }
-#ifdef DEBUG
-        std::cout << "8bit-SRGB swapchain surface format unavailable, choosing the first available one.." << std::endl;
-#endif
         return availableFormats[0];
     }
     
@@ -533,11 +405,7 @@ namespace
             .ppEnabledExtensionNames = deviceRequiredExtensions.data(),
             .pEnabledFeatures = &deviceFeatures
         };
-        
-#ifdef DEBUG
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-#endif
+
         logicalDevice = physicalDevice.createDeviceUnique(createInfo);
         
         graphicsQueue = logicalDevice->getQueue(indices.graphicsFamily.value(), 0);
@@ -1293,10 +1161,7 @@ namespace
         std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties(nullptr);
 
         createInstance();
-        
-#ifdef DEBUG
-        setupDebugMessenger();
-#endif
+
         createSurface();
         
         // Choisir le GPU
@@ -1354,24 +1219,15 @@ namespace
 };
 
 
-std::shared_ptr<sk::Window> sk::begin()
+std::shared_ptr<sk::Window> sk::initWindow(unsigned int width, unsigned int height)
 {
     currentFrame = 0;
     windowResized = false;
-    window = std::make_shared<sk::Window>(1366, 768);
+    window = std::make_shared<sk::Window>(width, height);
 
     initVulkan();
 
     return window;
-}
-
-void sk::end()
-{
-    logicalDevice->destroyRenderPass(renderPass);
-    
-#ifdef DEBUG
-    destroyDebugUtilsMessengerEXT(instance.get(), debugMessenger, nullptr);
-#endif
 }
 
 void sk::setUniforms(float uTime, math::vec3 uClr)
