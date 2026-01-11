@@ -16,6 +16,9 @@
 #include "renderer.hpp"
 #include "window.hpp"
 
+#define RT_WIDTH 1366u
+#define RT_HEIGHT 768u
+
 // structs
 namespace
 {
@@ -56,18 +59,28 @@ namespace
 namespace
 {
     std::shared_ptr<sk::Window> window;
+    int window_width = 0, window_height = 0;
     vk::detail::DynamicLoader dl;
     vk::UniqueInstance instance;
     vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     vk::UniqueDevice logicalDevice;
     vk::Queue graphicsQueue; // handle : interface avec la queue "graphics" de la familyQueue
+
+    // TODO : réorganiser les queues. Avoir une queue qui fait du compute (le raytracing) séparé d'une queue qui fait l'UI
+    // on pourrait même séparer encore une queue pour le compute de la physique.
+    // btw presentQueue ne sert à rien, ce sera tjrs la même que graphicsQueue sur les pc récents
     vk::Queue presentQueue;  // handle : idem pour present (queue qui s'occupe de donner le rendu à l'écran)
+
     vk::UniqueSurfaceKHR surface;  // "fenêtre" du point de vue de Vulkan
     vk::UniqueSwapchainKHR swapChain{}; // file d'images attendant d'être rendues
     vk::Format swapChainImageFormat;
     vk::Extent2D swapChainExtent;
-    std::vector<vk::Image> swapChainImages;
+    std::vector<vk::Image> swapChainImages; // et non pas <vk::UniqueImage> pcq c'est l'UniqueSwapchain qui a leur ownership
     std::vector<vk::UniqueImageView> swapChainImageViews;
+    std::vector<vk::UniqueImage> rtImages;
+    std::vector<vk::UniqueDeviceMemory> rtImageMemories;
+    std::vector<vk::UniqueImageView> rtImageViews;
+    std::vector<vk::DescriptorImageInfo> rtDescImageInfos{};
     vk::UniqueDescriptorSetLayout descriptorSetLayout; // description de comment lier l'UBO du CPU avec celui du GPU
     vk::UniquePipelineLayout pipelineLayout; // envoi d'uniform dans les shaders
     vk::UniquePipeline pipeline;
@@ -94,7 +107,6 @@ namespace
     std::vector<vk::UniqueSemaphore> imageAvailableSemaphores;
     std::vector<vk::UniqueSemaphore> readyForPresentationSemaphores;
     std::vector<vk::UniqueFence> readyForNextFrameFences;
-    std::vector<vk::DescriptorImageInfo> descImageInfos{};
     
     vk::UniqueBuffer vertexBuffer;
     vk::UniqueDeviceMemory vertexBufferMemory;
@@ -123,6 +135,7 @@ namespace
 
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups{};
     std::vector<vk::DescriptorSetLayoutBinding> bindings{};
+    std::vector<vk::StridedDeviceAddressRegionKHR> regions{};
     
     const std::vector<const char*> deviceRequiredExtensions = {
 #ifdef __APPLE__
@@ -484,8 +497,6 @@ namespace
             // Ce mode de partage transfère l'"ownership" des images. Ici on a une seule famille donc
             // on doit choisir ce mode, car l'autre requiert au moins 2 familles
             scCreateInfo.imageSharingMode = vk::SharingMode::eExclusive;
-            scCreateInfo.queueFamilyIndexCount = 0; // Optionnel
-            scCreateInfo.pQueueFamilyIndices = nullptr; // Optionnel
         }
         
         try {
@@ -499,73 +510,113 @@ namespace
         swapChainImageFormat = surfaceFormat.format;
         swapChainExtent = extent;
     }
+
+    uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties)
+    {
+        vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+            if ((typeFilter & (1 << i)) and (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+                return i;
+        }
+
+        throw std::runtime_error("Found no compatible memory type.");
+    }
+
+    // Fait passer image d'un mode à un autre (lecture / écriture, optimisé pour transfer src / dst, à quelle étape de la pipeline...)
+    void setImageLayout(vk::CommandBuffer commandBuffer, vk::Image image, 
+        vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+        vk::AccessFlags srcAccess = {}, vk::AccessFlags dstAccess = {},
+        vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eAllCommands, 
+        vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eAllCommands)
+    {
+        vk::ImageMemoryBarrier barrier;
+        barrier.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
+        barrier.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
+        barrier.setImage(image);
+        barrier.setOldLayout(oldLayout);
+        barrier.setNewLayout(newLayout);
+        barrier.setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+        barrier.setSrcAccessMask(srcAccess);
+        barrier.setDstAccessMask(dstAccess);
+        commandBuffer.pipelineBarrier(srcStage, dstStage, {}, {}, {}, barrier);
+    }
+
+    void createRTOutputImage()
+    {
+        const auto format = vk::Format::eR32G32B32A32Sfloat;
+        auto imageInfo = vk::ImageCreateInfo()
+            .setImageType(vk::ImageType::e2D)
+            .setExtent({RT_WIDTH, RT_HEIGHT, 1})
+            .setMipLevels(1)
+            .setArrayLayers(1)
+            .setFormat(format)
+            .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc);
+        auto tmpImage = logicalDevice->createImageUnique(imageInfo);
+
+        vk::MemoryRequirements requirements = logicalDevice->getImageMemoryRequirements(*tmpImage);
+        uint32_t memoryTypeIndex = findMemoryType(requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        auto memoryInfo = vk::MemoryAllocateInfo()
+            .setAllocationSize(requirements.size)
+            .setMemoryTypeIndex(memoryTypeIndex);
+        auto tmpMemory = logicalDevice->allocateMemoryUnique(memoryInfo);
+
+        logicalDevice->bindImageMemory(*tmpImage, *tmpMemory, 0);
+
+        auto imageViewInfo = vk::ImageViewCreateInfo()
+            .setImage(*tmpImage)
+            .setViewType(vk::ImageViewType::e2D)
+            .setFormat(format)
+            .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+        auto tmpView = logicalDevice->createImageViewUnique(imageViewInfo);
+
+        rtDescImageInfos.push_back(vk::DescriptorImageInfo()
+            .setImageView(*tmpView)
+            .setImageLayout(vk::ImageLayout::eGeneral));
+
+        // On a besoin de créer un command buffer ici, pour qu'au moment où le gpu est prêt on fasse passer cet imageView de eUndefined à eGeneral
+        auto commandBufferInfo = vk::CommandBufferAllocateInfo()
+            .setCommandPool(*commandPool)
+            .setCommandBufferCount(1);
+
+        vk::UniqueCommandBuffer commandBuffer = std::move(logicalDevice->allocateCommandBuffersUnique(commandBufferInfo).front());
+        vk::CommandBufferBeginInfo beginInfo {
+            .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+        };
+
+        commandBuffer->begin(beginInfo);
+        setImageLayout(*commandBuffer, *tmpImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+        commandBuffer->end();
+
+        vk::SubmitInfo submitInfo;
+        submitInfo.setCommandBuffers(*commandBuffer);
+        graphicsQueue.submit(submitInfo);
+        graphicsQueue.waitIdle();
+
+        rtImages.push_back(std::move(tmpImage));
+        rtImageMemories.push_back(std::move(tmpMemory));
+        rtImageViews.push_back(std::move(tmpView));
+    }
     
     void createImageViews()
     {
         for(const auto& image : swapChainImages)
         {
-            vk::ImageViewCreateInfo ivCreateInfo{
-                .image = image,
-                .viewType = vk::ImageViewType::e2D,
-                .format = swapChainImageFormat,
-            };
-            
-            ivCreateInfo.components.r = vk::ComponentSwizzle::eIdentity;
-            ivCreateInfo.components.g = vk::ComponentSwizzle::eIdentity;
-            ivCreateInfo.components.b = vk::ComponentSwizzle::eIdentity;
-            ivCreateInfo.components.a = vk::ComponentSwizzle::eIdentity;
-            
-            ivCreateInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-            ivCreateInfo.subresourceRange.baseMipLevel = 0;
-            ivCreateInfo.subresourceRange.levelCount = 1;
-            ivCreateInfo.subresourceRange.baseArrayLayer = 0;
-            ivCreateInfo.subresourceRange.layerCount = 1;
+            auto ivCreateInfo = vk::ImageViewCreateInfo()
+                .setImage(image)
+                .setViewType(vk::ImageViewType::e2D)
+                .setFormat(swapChainImageFormat)
+                .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
 
-            auto tmpView = logicalDevice->createImageViewUnique(ivCreateInfo);
-
-            descImageInfos.push_back(vk::DescriptorImageInfo()
-                .setImageView(*tmpView)
-                .setImageLayout(vk::ImageLayout::eGeneral));
-
-            // On a besoin de créer un command buffer ici, pour qu'au moment où le gpu est prêt on fasse passer cet imageView de eUndefined à eGeneral
-            auto commandBufferInfo = vk::CommandBufferAllocateInfo()
-                .setCommandPool(*commandPool)
-                .setCommandBufferCount(1);
-
-            vk::UniqueCommandBuffer commandBuffer = std::move(logicalDevice->allocateCommandBuffersUnique(commandBufferInfo).front());
-            vk::CommandBufferBeginInfo beginInfo {
-                .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-            };
-
-            commandBuffer->begin(beginInfo);
-
-            vk::ImageMemoryBarrier barrier;
-            barrier.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
-            barrier.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
-            barrier.setImage(image);
-            barrier.setOldLayout(vk::ImageLayout::eUndefined);
-            barrier.setNewLayout(vk::ImageLayout::eGeneral);
-            barrier.setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
-            barrier.setSrcAccessMask({});
-            barrier.setDstAccessMask({});
-            commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                                      vk::PipelineStageFlagBits::eAllCommands,
-                                      {}, {}, {}, barrier);
-            // !!!! vrmt pas sûr pour cette histoire de barrière, il en faut pas genre une à chaque frame normalement ?
-            commandBuffer->end();
-
-            vk::SubmitInfo submitInfo;
-            submitInfo.setCommandBuffers(*commandBuffer);
-            graphicsQueue.submit(submitInfo);
-            graphicsQueue.waitIdle();
-
-            // pour un jeu en 3D stéréographique, faire 2 imageViews pour chaque image, avec 2 layers par img
             try {
-                swapChainImageViews.push_back(std::move(tmpView));
+                swapChainImageViews.push_back(logicalDevice->createImageViewUnique(ivCreateInfo));
             }
             catch (vk::SystemError err) {
                 throw std::runtime_error("Failed to create image views from swap chain image.");
             }
+
+            // Maintenant on crée les images qui serviront d'output au raygen shader (1 par frame in flight)
+            createRTOutputImage();
         }
     }
     
@@ -593,12 +644,11 @@ namespace
     
     void recreateSwapChain()
     {
-        int width = 0, height = 0;
-        window->getSize(width, height);
+        window->getSize(window_width, window_height);
         
-        while(width == 0 or height == 0)
+        while(window_width == 0 or window_height == 0)
         {
-            window->getSize(width, height);
+            window->getSize(window_width, window_height);
             window->waitForEvent();
         }
         
@@ -608,12 +658,6 @@ namespace
         createSwapChain();
         createImageViews();
     }
-
-    /* TODO :
-     * 1) shader modules etc
-     * 2) rt pipeline
-     * 3) shader binding table
-     */
 
     // Objet vulkan contenant le bytecode d'un shader en SPIR-V
     vk::UniqueShaderModule createShaderModule(const std::vector<char>& code)
@@ -732,22 +776,46 @@ namespace
             throw std::runtime_error("Failed to start recording commands in command buffer.");
         }
         
-        // commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-        // commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, *descSet, nullptr);
-        // commandBuffer.pushConstants(*pipelineLayout, vk::ShaderStageFlagBits::eRaygenKHR, 0, sizeof(int), &frame);
-        // commandBuffer.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, WIDTH, HEIGHT, 1);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, *descriptorSets[currentFrame], nullptr);
+        
+        commandBuffer.traceRaysKHR(regions[0], regions[1], regions[2], {}, RT_WIDTH, RT_HEIGHT, 1u);
 
-        // vk::Image srcImage = *outputImage.image;
-        // vk::Image dstImage = swapchainImages[imageIndex];
-        // Image::setImageLayout(commandBuffer, srcImage, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal);
-        // Image::setImageLayout(commandBuffer, dstImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-        // Image::copyImage(commandBuffer, srcImage, dstImage);
-        // Image::setImageLayout(commandBuffer, srcImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral);
-        // Image::setImageLayout(commandBuffer, dstImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR);
+        vk::Image srcImage = rtImages[currentFrame].get();
+        vk::Image dstImage = swapChainImages[currentFrame];
+
+        setImageLayout(commandBuffer, srcImage, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal, 
+            vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eTransferRead, 
+            vk::PipelineStageFlagBits::eRayTracingShaderKHR, vk::PipelineStageFlagBits::eTransfer);
+        setImageLayout(commandBuffer, dstImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 
+            vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferWrite, 
+            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
         
-        // !!!!!!! en fait il fallait séparer l'image d'output du raytracing de l'image de la swapchain
+        auto blitRegion = vk::ImageBlit()
+            .setSrcSubresource({ vk::ImageAspectFlagBits::eColor, 0, 0, 1 })
+            .setSrcOffsets({ vk::Offset3D{ 0, 0, 0 },
+                             vk::Offset3D{static_cast<int32_t>(RT_WIDTH), static_cast<int32_t>(RT_HEIGHT), 1} })
+            .setDstSubresource({ vk::ImageAspectFlagBits::eColor, 0, 0, 1 })
+            .setDstOffsets({ vk::Offset3D{ 0, 0, 0 },
+                             vk::Offset3D{static_cast<int32_t>(window_width), static_cast<int32_t>(window_height), 1} });
+
+        commandBuffer.blitImage(
+            srcImage, vk::ImageLayout::eTransferSrcOptimal,
+            dstImage, vk::ImageLayout::eTransferDstOptimal,
+            blitRegion,
+            vk::Filter::eNearest
+        );
+
+        // TODO : enlever spécifiquement ce setImageLayout, je crois qu'il est useless
+        setImageLayout(commandBuffer, srcImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral,
+            vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eShaderWrite, 
+            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eRayTracingShaderKHR);
+
+        setImageLayout(commandBuffer, dstImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR,
+            vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone, 
+            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe);
         
-        // On a fini d'enregistrer ce qu'on veut que commandBuffer fasse
+        // On a fini d'enregistrer ce qu'on veut que ce commandBuffer fasse
         commandBuffer.end();
     }
     
@@ -802,18 +870,6 @@ namespace
         } catch (vk::SystemError err) {
             throw std::runtime_error("Failed to create semaphores / fence.");
         }
-    }
-    
-    uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties)
-    {
-        vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
-
-        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-            if ((typeFilter & (1 << i)) and (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-                return i;
-        }
-
-        throw std::runtime_error("Found no compatible memory type.");
     }
 
     void createBuffer(vk::DeviceSize size,
@@ -1355,9 +1411,9 @@ namespace
         uint32_t stride = rtProperties.shaderGroupHandleAlignment;
         uint32_t size = rtProperties.shaderGroupHandleAlignment;
 
-        vk::StridedDeviceAddressRegionKHR raygenRegion{raygenSBTDeviceAddress, stride, size};
-        vk::StridedDeviceAddressRegionKHR missRegion{rmissSBTDeviceAddress, stride, size};
-        vk::StridedDeviceAddressRegionKHR hitRegion{rchitSBTDeviceAddress, stride, size};
+        regions.push_back({raygenSBTDeviceAddress, stride, size});
+        regions.push_back({rmissSBTDeviceAddress, stride, size});
+        regions.push_back({rchitSBTDeviceAddress, stride, size});
 
         std::vector<vk::DescriptorSetLayout> layouts(NB_FRAMES_IN_FLIGHT, *descriptorSetLayout);
         auto descSetInfo = vk::DescriptorSetAllocateInfo()
@@ -1376,7 +1432,7 @@ namespace
                 writes[i].setDstBinding(bindings[i].binding);
             }
             writes[0].setPNext(tlasDescInfo);
-            writes[1].setImageInfo(descImageInfos[frame]);
+            writes[1].setImageInfo(rtDescImageInfos[frame]);
             logicalDevice->updateDescriptorSets(writes, nullptr);
         }
     }
@@ -1443,6 +1499,7 @@ std::shared_ptr<sk::Window> sk::initWindow(unsigned int width, unsigned int heig
 {
     currentFrame = 0;
     windowResized = false;
+    window_width = width, window_height = height;
     window = std::make_shared<sk::Window>(width, height);
 
     initVulkan();
@@ -1484,8 +1541,8 @@ void sk::draw()
     commandBuffers[currentFrame].reset();
     recordCommandBuffer(commandBuffers[currentFrame], (uint32_t)imgId);
     
-    // On voudra attendre le sémaphore imageAvailable au moment du color attachment (donc entre vert et frag)
-    vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+    // On voudra attendre le sémaphore imageAvailable au moment de la copie de rtImage sur swapChainImage
+    vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eTransfer };
     
     // Ensuite on peut submit le command buffer
     vk::SubmitInfo submitInfo {
