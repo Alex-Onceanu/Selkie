@@ -3,16 +3,8 @@
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT topLevelAS;
 layout(set = 0, binding = 1, rgba8) uniform image2D image;
-layout(location = 0) rayPayloadEXT vec3 ResultColor;
 
 void main()
 {
-    const vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchIDEXT.xy - 1);
-    const vec3 origin = vec3(uv.x, 1.0f - uv.y, -1.0f);
-    const vec3 direction = vec3(0.0f, 0.0f, 1.0f);
-    float tmin = 0.001;
-    float tmax = 10000.0;
-
-    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
-    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(ResultColor, 0.0));
+    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(0.5, 0.3, 0.7, 0.0));
 }
