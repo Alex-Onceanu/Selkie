@@ -16,17 +16,18 @@ namespace sk
     {
     protected:
         GLFWwindow* window;
-
-    public:
+        
+        public:
         Window(int __WINDOW_WIDTH, int __WINDOW_HEIGHT);
         ~Window();
-
+        
         bool isAlive();
         void waitForEvent();
-
+        
         GLFWwindow* getPtr();
         void getSize(int& pWidth, int& pHeight);
         void setResizeCallback(void (*__callback)(void));
+        void setEndCallback(void (*__callback)(void));
 
         std::vector<const char*> getRequiredExtensions();
 

@@ -18,6 +18,7 @@ int main()
             
             sk::draw();
         }
+        sk::end();
     }
     catch(const std::exception& e)
     {

@@ -11,4 +11,6 @@ namespace sk
 
     // Appeler cette fonction 1 fois par frame max
     void draw();
+
+    void end();
 };

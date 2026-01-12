@@ -1,6 +1,7 @@
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
+
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 #include <iostream>
@@ -60,13 +61,14 @@ namespace
 // attributs
 namespace
 {
-    std::shared_ptr<sk::Window> window;
     int window_width = 0, window_height = 0;
-    static vk::detail::DynamicLoader dl;
-    vk::UniqueDebugUtilsMessengerEXT messenger;
+    std::shared_ptr<sk::Window> window;
+    vk::detail::DynamicLoader dl;
     vk::UniqueInstance instance;
-    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::UniqueDebugUtilsMessengerEXT messenger;
+    vk::UniqueSurfaceKHR surface;  // "fenêtre" du point de vue de Vulkan
     vk::UniqueDevice logicalDevice;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     vk::Queue graphicsQueue; // handle : interface avec la queue "graphics" de la familyQueue
 
     // TODO : réorganiser les queues. Avoir une queue qui fait du compute (le raytracing) séparé d'une queue qui fait l'UI
@@ -74,72 +76,62 @@ namespace
     // btw presentQueue ne sert à rien, ce sera tjrs la même que graphicsQueue sur les pc récents
     vk::Queue presentQueue;  // handle : idem pour present (queue qui s'occupe de donner le rendu à l'écran)
 
-    vk::UniqueSurfaceKHR surface;  // "fenêtre" du point de vue de Vulkan
     vk::UniqueSwapchainKHR swapChain{}; // file d'images attendant d'être rendues
     vk::Format swapChainImageFormat;
     vk::Extent2D swapChainExtent;
     std::vector<vk::Image> swapChainImages; // et non pas <vk::UniqueImage> pcq c'est l'UniqueSwapchain qui a leur ownership
     std::vector<vk::UniqueImageView> swapChainImageViews;
-    std::vector<vk::UniqueImage> rtImages;
+    
+    vk::UniqueCommandPool commandPool;
+    std::vector<vk::UniqueCommandBuffer> commandBuffers;
+
     std::vector<vk::UniqueDeviceMemory> rtImageMemories;
+    std::vector<vk::UniqueImage> rtImages;
     std::vector<vk::UniqueImageView> rtImageViews;
     std::vector<vk::DescriptorImageInfo> rtDescImageInfos{};
-    vk::UniqueDescriptorSetLayout descriptorSetLayout; // description de comment lier l'UBO du CPU avec celui du GPU
-    vk::UniquePipelineLayout pipelineLayout; // envoi d'uniform dans les shaders
-    vk::UniquePipeline pipeline;
-    vk::UniqueCommandPool commandPool;
-    vk::UniqueDescriptorPool descriptorPool;
-    std::vector<vk::UniqueDescriptorSet> descriptorSets;
-    int currentFrame;
-    uint32_t currentSwapChainImage;
-    bool windowResized;
 
-    const std::vector<Vertex> vertices {
-        { { -1.,-1. },{ 1.,0.,0. } },
-        { { -1., 1. },{ 0.,1.,0. } },
-        { {  1., 1. },{ 0.,0.,1. } },
-        { {  1.,-1. },{ 1.,0.,1. } }
-    };
+    std::vector<vk::DeviceAddress> tlasBufDeviceAddress;
+    std::vector<vk::UniqueDeviceMemory> tlasBufMemory;
+    std::vector<vk::UniqueBuffer> tlasBuf;
+    std::vector<vk::WriteDescriptorSetAccelerationStructureKHR> tlasDescInfo;
+    std::vector<vk::UniqueAccelerationStructureKHR> tlasAccel;
     
-    const std::vector<uint16_t> indices {
-        0, 1, 3,
-        3, 1, 2
-    };
+    std::vector<vk::DeviceAddress> aabbBufDeviceAddress;
+    std::vector<vk::UniqueDeviceMemory> aabbBufMemory;
+    std::vector<vk::UniqueBuffer> aabbBuf;
     
-    // pour chaque frame in flight
-    std::vector<vk::UniqueCommandBuffer> commandBuffers;
+    std::vector<vk::UniqueAccelerationStructureKHR> blasAccel;
+    std::vector<vk::WriteDescriptorSetAccelerationStructureKHR> blasDescInfo;
+    std::vector<vk::DeviceAddress> blasBufDeviceAddress;
+    std::vector<vk::UniqueDeviceMemory> blasBufMemory;
+    std::vector<vk::UniqueBuffer> blasBuf;
+    
+    std::vector<vk::StridedDeviceAddressRegionKHR> regions{};
+    std::vector<vk::DescriptorSetLayoutBinding> bindings{};
+    std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups{};
+    
+    vk::DeviceAddress raygenSBTDeviceAddress{};
+    vk::UniqueDeviceMemory raygenSBTMemory{};
+    vk::UniqueBuffer raygenSBT{};
+    
+    vk::UniqueDescriptorPool descriptorPool;
+    vk::UniqueDescriptorSetLayout descriptorSetLayout;
+    vk::UniquePipelineLayout pipelineLayout;
+    vk::UniquePipeline pipeline;
+    std::vector<vk::UniqueDescriptorSet> descriptorSets;
+
     std::vector<vk::UniqueSemaphore> imageAvailableSemaphores;
     std::vector<vk::UniqueSemaphore> readyForPresentationSemaphores;
     std::vector<vk::UniqueFence> readyForNextFrameFences;
 
-    std::vector<vk::UniqueBuffer> tlasBuf;
-    std::vector<vk::UniqueDeviceMemory> tlasBufMemory;
-    std::vector<vk::DeviceAddress> tlasBufDeviceAddress;
-    std::vector<vk::WriteDescriptorSetAccelerationStructureKHR> tlasDescInfo;
-    std::vector<vk::UniqueAccelerationStructureKHR> tlasAccel;
+    int currentFrame;
+    uint32_t currentSwapChainImage;
+    bool windowResized;
 
-    std::vector<vk::UniqueBuffer> aabbBuf;
-    std::vector<vk::UniqueDeviceMemory> aabbBufMemory;
-    std::vector<vk::DeviceAddress> aabbBufDeviceAddress;
-
-    std::vector<vk::UniqueBuffer> blasBuf;
-    std::vector<vk::UniqueDeviceMemory> blasBufMemory;
-    std::vector<vk::DeviceAddress> blasBufDeviceAddress;
-    std::vector<vk::WriteDescriptorSetAccelerationStructureKHR> blasDescInfo;
-    std::vector<vk::UniqueAccelerationStructureKHR> blasAccel;
-
-    std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups{};
-    std::vector<vk::DescriptorSetLayoutBinding> bindings{};
-    std::vector<vk::StridedDeviceAddressRegionKHR> regions{};
-
-    vk::UniqueBuffer raygenSBT{};
-    vk::UniqueDeviceMemory raygenSBTMemory{};
-    vk::DeviceAddress raygenSBTDeviceAddress{};
-    
     const std::vector<const char*> deviceRequiredExtensions = {
-#ifdef __APPLE__
+        #ifdef __APPLE__
         "VK_KHR_portability_subset",
-#endif
+        #endif
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
@@ -1375,6 +1367,53 @@ namespace
     }
 };
 
+void sk::end()
+{
+    logicalDevice->waitIdle();
+
+    commandBuffers.clear();
+    imageAvailableSemaphores.clear();
+    readyForPresentationSemaphores.clear();
+    readyForNextFrameFences.clear();
+    tlasBufMemory.clear();
+    tlasBuf.clear();
+    tlasBufDeviceAddress.clear();
+    tlasDescInfo.clear();
+    tlasAccel.clear();
+    aabbBufMemory.clear();
+    aabbBuf.clear();
+    aabbBufDeviceAddress.clear();
+    blasBufMemory.clear();
+    blasBuf.clear();
+    blasBufDeviceAddress.clear();
+    blasDescInfo.clear();
+    blasAccel.clear();
+    shaderGroups.clear();
+    bindings.clear();
+    regions.clear();
+
+    raygenSBTMemory.release();
+    raygenSBT.release();
+
+    swapChain.release();
+    swapChainImageViews.clear();
+    rtImageMemories.clear();
+    rtImages.clear();
+    rtImageViews.clear();
+    rtDescImageInfos.clear();
+
+    descriptorSetLayout.release();
+    pipelineLayout.release();
+    pipeline.release();
+    commandPool.release();
+    descriptorPool.release();
+    descriptorSets.clear();
+
+    instance.release();
+    messenger.release();
+    surface.release();
+    logicalDevice.release();
+}
 
 std::shared_ptr<sk::Window> sk::initWindow(unsigned int width, unsigned int height)
 {
