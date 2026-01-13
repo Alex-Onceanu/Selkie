@@ -32,7 +32,7 @@ namespace sk
         std::vector<const char*> getRequiredExtensions();
 
     #ifdef VULKAN_RENDERER
-        vk::UniqueSurfaceKHR createSurface(VkInstance instance);
+        vk::SurfaceKHR createSurface(VkInstance instance);
     #endif
     };
 };

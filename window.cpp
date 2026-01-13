@@ -73,20 +73,20 @@ std::vector<const char*> sk::Window::getRequiredExtensions()
     
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
     
-#ifdef DEBUG
+#ifndef NDEBUG
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
     return extensions;
 }
 
 #ifdef VULKAN_RENDERER
-vk::UniqueSurfaceKHR sk::Window::createSurface(VkInstance instance)
+vk::SurfaceKHR sk::Window::createSurface(VkInstance instance)
 {
     VkSurfaceKHR tmpSurface;
     if(glfwCreateWindowSurface(instance, window, nullptr, &tmpSurface) != VK_SUCCESS)
     {
         throw std::runtime_error("GLFW failed to create window surface !");
     }
-    return vk::UniqueSurfaceKHR(vk::SurfaceKHR(tmpSurface), {instance});
+    return vk::SurfaceKHR(tmpSurface);
 }
 #endif
