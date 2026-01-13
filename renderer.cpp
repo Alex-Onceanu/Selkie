@@ -119,12 +119,11 @@ namespace
     std::vector<vk::WriteDescriptorSetAccelerationStructureKHR> blasDescInfo;
     std::vector<Buffer> blasBufs;
     
-    std::vector<vk::StridedDeviceAddressRegionKHR> regions{};
+    std::vector<vk::StridedDeviceAddressRegionKHR> sbtRegions{};
     std::vector<vk::DescriptorSetLayoutBinding> bindings{};
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups{};
-    
-    vk::ShaderModule rgenModule;
-    Buffer raygenBindingTable;
+    std::vector<vk::ShaderModule> shaderModules{};
+    std::vector<Buffer> bindingTableBufs{};
     
     vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout descriptorSetLayout;
@@ -343,7 +342,7 @@ namespace
         gpu.getProperties(&gpuProperties);
         gpu.getFeatures(&gpuFeatures);
 
-        // std::cout << "GPU " << gpuProperties.deviceName << " : ";
+        // std::cout << ">> GPU " << gpuProperties.deviceName << "\n";
         
         if(gpuProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
         {
@@ -717,32 +716,42 @@ namespace
     
     void createRaytracingPipeline()
     {
+        /* Terminologie :
+         * Module := code spriV compilé
+         * Stage  := le shader en question (contient un module)
+         * Group  := ensemble de stages 
+         * - un Group pour rgen, un pour rmiss (sont eGeneral), puis 1 par ~ type d'objet
+         * - chaque type d'objet aura son Group contenant un intersection, un closest hit et un any hit
+         */
+
         auto rgenCode  = readFile("../shaders/out/tmp.rgen.spv");
-        // auto rmissCode = readFile("../shaders/out/tmp.rmiss.spv");
-        // auto rchitCode = readFile("../shaders/out/tmp.rchit.spv");
+        auto rmissCode = readFile("../shaders/out/tmp.rmiss.spv");
+        auto rchitCode = readFile("../shaders/out/tmp.rchit.spv");
+        auto rintCode  = readFile("../shaders/out/tmp.rint.spv");
         
-        rgenModule = createShaderModule(rgenCode);
-        // auto rmissModule = createShaderModule(rmissCode);
-        // auto rchitModule = createShaderModule(rchitCode);
+        shaderModules.push_back(createShaderModule(rgenCode));
+        shaderModules.push_back(createShaderModule(rmissCode));
+        shaderModules.push_back(createShaderModule(rchitCode));
+        shaderModules.push_back(createShaderModule(rintCode));
 
-        vk::PipelineShaderStageCreateInfo stages[1];
+        vk::ShaderStageFlagBits stageNames[] = { 
+            vk::ShaderStageFlagBits::eRaygenKHR,
+            vk::ShaderStageFlagBits::eMissKHR,
+            vk::ShaderStageFlagBits::eClosestHitKHR,
+            vk::ShaderStageFlagBits::eIntersectionKHR
+        };
 
-        stages[0] = vk::PipelineShaderStageCreateInfo()
-            .setStage(vk::ShaderStageFlagBits::eRaygenKHR)
-            .setModule(rgenModule)
-            .setPName("main");
+        std::vector<vk::PipelineShaderStageCreateInfo> stages;
 
-        // stages[1] = vk::PipelineShaderStageCreateInfo()
-        //     .setStage(vk::ShaderStageFlagBits::eMissKHR)
-        //     .setModule(*rmissModule)
-        //     .setPName("main");
+        for(int i = 0; i < shaderModules.size(); i++)
+        {
+            stages.push_back(vk::PipelineShaderStageCreateInfo()
+                                .setStage(stageNames[i])
+                                .setModule(shaderModules[i])
+                                .setPName("main"));
+        }
 
-        // stages[2] = vk::PipelineShaderStageCreateInfo()
-        //     .setStage(vk::ShaderStageFlagBits::eClosestHitKHR)
-        //     .setModule(*rchitModule)
-        //     .setPName("main");
-
-
+        // rgen group
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
             .setGeneralShader(0)
@@ -750,22 +759,23 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
 
-        // shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
-        //     .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
-        //     .setGeneralShader(1)
-        //     .setClosestHitShader(vk::ShaderUnusedKHR)
-        //     .setAnyHitShader(vk::ShaderUnusedKHR)
-        //     .setIntersectionShader(vk::ShaderUnusedKHR));
+        // rmiss group
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+            .setGeneralShader(1)
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setIntersectionShader(vk::ShaderUnusedKHR));
 
-        // shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
-        //     .setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup)
-        //     .setGeneralShader(vk::ShaderUnusedKHR)
-        //     .setClosestHitShader(2)
-        //     .setAnyHitShader(vk::ShaderUnusedKHR)
-        //     .setIntersectionShader(vk::ShaderUnusedKHR));
+        // procedural group
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
+            .setGeneralShader(vk::ShaderUnusedKHR)
+            .setClosestHitShader(2)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setIntersectionShader(3));
 
-
-        // Ici on envoie aux shaders des valeurs pour les uniform
+        // Ici on envoie aux shaders des valeurs pour les "uniform"
         auto plCreateInfo = vk::PipelineLayoutCreateInfo()
             .setSetLayouts(descriptorSetLayout);
         
@@ -819,7 +829,7 @@ namespace
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, descriptorSets[currentFrame], nullptr);
         
-        commandBuffer.traceRaysKHR(regions[0], {}, {}, {}, RT_WIDTH, RT_HEIGHT, 1u);
+        commandBuffer.traceRaysKHR(sbtRegions[0], sbtRegions[1], sbtRegions[2], {}, RT_WIDTH, RT_HEIGHT, 1u);
 
         vk::Image srcImage = rtImages[currentFrame];
         vk::Image dstImage = swapChainImages[currentSwapChainImage];
@@ -1000,7 +1010,7 @@ namespace
         for(int frame = 0; frame < NB_FRAMES_IN_FLIGHT; frame++)
         {
             // BLAS d'abord
-            std::vector<vk::AabbPositionsKHR> aabbs = {{-1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 3.0f}};        
+            std::vector<vk::AabbPositionsKHR> aabbs = {{-1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f}};        
             vk::DeviceSize bufSize = aabbs.size() * sizeof(aabbs[0]);
 
             auto stagingBuf = createBuffer(bufSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
@@ -1231,7 +1241,7 @@ namespace
 
         uint32_t handleSize = rtProperties.shaderGroupHandleSize;
         uint32_t handleSizeAligned = rtProperties.shaderGroupHandleAlignment;
-        uint32_t groupCount = static_cast<uint32_t>(shaderGroups.size()); // nb de groupes (1 seul pour rgen pour l'instant)
+        uint32_t groupCount = static_cast<uint32_t>(shaderGroups.size());
         uint32_t sbtSize = groupCount * handleSize; // TODO : Aligned ?
 
         // TODO : se renseigner sur shader record (comment utiliser des matériaux (ou autres params) différents par instance ?)
@@ -1244,42 +1254,50 @@ namespace
             throw std::runtime_error("Error when getting raytracing shader group handles.");
         }
 
-        raygenBindingTable = createBuffer(handleSize, 
-                                        vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+        {
+            auto rgenTable = createBuffer(handleSize, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+                                                    | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                         vk::MemoryPropertyFlagBits::eDeviceLocal);
+            
+            // on écrit une adresse mémoire à une adresse mémoire (astuce de Quine ?)
+            // par contre ce qui m'étonne c'est qu'on écrit l'adresse mémoire de son propre programme au lieu d'écrire celle des autres shaders
+            void* mapped = device.mapMemory(rgenTable.memory, 0, handleSize);
+            memcpy(mapped, handleStorage.data() + 0 * handleSizeAligned, handleSize);
+            device.unmapMemory(rgenTable.memory);
+
+            bindingTableBufs.push_back(rgenTable);
+        }
+
+        {
+            auto rmissTable = createBuffer(handleSize, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+                                                    | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                        vk::MemoryPropertyFlagBits::eDeviceLocal);
+            
+            void* mapped = device.mapMemory(rmissTable.memory, 0, handleSize);
+            memcpy(mapped, handleStorage.data() + 1 * handleSizeAligned, handleSize);
+            device.unmapMemory(rmissTable.memory);
+
+            bindingTableBufs.push_back(rmissTable);
+        }
         
-        // on écrit une adresse mémoire à une adresse mémoire (astuce de Quine ?)
-        // par contre ce qui m'étonne c'est qu'on écrit l'adresse mémoire de son propre programme au lieu d'écrire celle des autres shaders
-        void* mapped = device.mapMemory(raygenBindingTable.memory, 0, handleSize);
-        memcpy(mapped, handleStorage.data() + 0 * handleSizeAligned, handleSize);
-        device.unmapMemory(raygenBindingTable.memory);
+        {
+            auto rhitTable = createBuffer(handleSize, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+                                                    | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                          vk::MemoryPropertyFlagBits::eDeviceLocal);
+            
+            void* mapped = device.mapMemory(rhitTable.memory, 0, handleSize);
+            memcpy(mapped, handleStorage.data() + 2 * handleSizeAligned, handleSize);
+            device.unmapMemory(rhitTable.memory);
 
-        // vk::Buffer rmissSBT{};
-        // vk::DeviceMemory rmissSBTMemory{};
-        // vk::DeviceAddress rmissSBTDeviceAddress{};
-        // createBuffer(handleSize, vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        //     vk::MemoryPropertyFlagBits::eDeviceLocal, rmissSBT, rmissSBTMemory, rmissSBTDeviceAddress);
-
-        // void* mapped2 = logicalDevice.mapMemory(*rmissSBTMemory, 0, handleSize);
-        // memcpy(mapped2, handleStorage.data() + 1 * handleSizeAligned, handleSize);
-        // logicalDevice.unmapMemory(*rmissSBTMemory);
-
-        // vk::Buffer rchitSBT{};
-        // vk::DeviceMemory rchitSBTMemory{};
-        // vk::DeviceAddress rchitSBTDeviceAddress{};
-        // createBuffer(handleSize, vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        //     vk::MemoryPropertyFlagBits::eDeviceLocal, rchitSBT, rchitSBTMemory, rchitSBTDeviceAddress);
-
-        // void* mapped3 = logicalDevice.mapMemory(*rchitSBTMemory, 0, handleSize);
-        // memcpy(mapped3, handleStorage.data() + 2 * handleSizeAligned, handleSize);
-        // logicalDevice.unmapMemory(*rchitSBTMemory);
+            bindingTableBufs.push_back(rhitTable);
+        }
 
         uint32_t stride = rtProperties.shaderGroupHandleAlignment;
         uint32_t size = rtProperties.shaderGroupHandleAlignment;
 
-        regions.push_back({raygenBindingTable.deviceAddress, stride, size});
-        // regions.push_back({rmissSBTDeviceAddress, stride, size});
-        // regions.push_back({rchitSBTDeviceAddress, stride, size});
+        sbtRegions.push_back({bindingTableBufs[0].deviceAddress, stride, size});
+        sbtRegions.push_back({bindingTableBufs[1].deviceAddress, stride, size});
+        sbtRegions.push_back({bindingTableBufs[2].deviceAddress, stride, size});
 
         std::vector<vk::DescriptorSetLayout> layouts(NB_FRAMES_IN_FLIGHT, descriptorSetLayout);
         auto descSetInfo = vk::DescriptorSetAllocateInfo()
@@ -1388,8 +1406,14 @@ void sk::end()
     device.destroyDescriptorSetLayout(descriptorSetLayout);
     device.destroyDescriptorPool(descriptorPool);
     
-    raygenBindingTable.destroy();
-    device.destroyShaderModule(rgenModule);
+    for(int i = 0; i < bindingTableBufs.size(); i++)
+    {
+        bindingTableBufs[i].destroy();
+    }
+    for(int i = 0; i < shaderModules.size(); i++)
+    {
+        device.destroyShaderModule(shaderModules[i]);
+    }
 
     device.freeCommandBuffers(commandPool, commandBuffers);
     device.destroyCommandPool(commandPool);
