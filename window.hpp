@@ -27,7 +27,6 @@ namespace sk
         GLFWwindow* getPtr();
         void getSize(int& pWidth, int& pHeight);
         void setResizeCallback(void (*__callback)(void));
-        void setEndCallback(void (*__callback)(void));
 
         std::vector<const char*> getRequiredExtensions();
 

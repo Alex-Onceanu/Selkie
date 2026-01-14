@@ -57,9 +57,9 @@ void sk::Window::getSize(int& pWidth, int& pHeight)
     glfwGetFramebufferSize(window, &pWidth, &pHeight);
 }
 
-void sk::Window::setResizeCallback(void (*__callback)(void))
+void sk::Window::setResizeCallback(void (*callback_)(void))
 {
-    callback = __callback;
+    callback = callback_;
 }
 
 std::vector<const char*> sk::Window::getRequiredExtensions()

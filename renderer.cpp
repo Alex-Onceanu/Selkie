@@ -206,7 +206,7 @@ namespace
                             vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance)
             .setPfnUserCallback(debugCallback);
 
-        std::vector<const char*> layers = { "VK_LAYER_KHRONOS_validation" };
+        std::vector<const char*> layers = { "VK_LAYER_KHRONOS_validation"};
         requiredExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
             
@@ -274,7 +274,7 @@ namespace
         
         for(const std::string& extension : deviceRequiredExtensions)
         {
-            auto str_eq = [&](vk::ExtensionProperties l){ return extension.compare(std::string(l.extensionName)); };
+            auto str_eq = [&](vk::ExtensionProperties l){ return extension == l.extensionName.data(); };
             
             if(std::find_if_not(availableExtensions.begin(), availableExtensions.end(), str_eq) == availableExtensions.end())
             {
@@ -724,10 +724,10 @@ namespace
          * - chaque type d'objet aura son Group contenant un intersection, un closest hit et un any hit
          */
 
-        auto rgenCode  = readFile("../shaders/out/tmp.rgen.spv");
-        auto rmissCode = readFile("../shaders/out/tmp.rmiss.spv");
-        auto rchitCode = readFile("../shaders/out/tmp.rchit.spv");
-        auto rintCode  = readFile("../shaders/out/tmp.rint.spv");
+        auto rgenCode  = readFile("../../../shaders/out/tmp.rgen.spv");
+        auto rmissCode = readFile("../../../shaders/out/tmp.rmiss.spv");
+        auto rchitCode = readFile("../../../shaders/out/tmp.rchit.spv");
+        auto rintCode  = readFile("../../../shaders/out/tmp.rint.spv");
         
         shaderModules.push_back(createShaderModule(rgenCode));
         shaderModules.push_back(createShaderModule(rmissCode));
@@ -828,6 +828,45 @@ namespace
         
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, descriptorSets[currentFrame], nullptr);
+
+        auto instancesData = vk::AccelerationStructureGeometryInstancesDataKHR()
+            .setArrayOfPointers(false)
+            .setData({ tlasInstances[currentFrame].deviceAddress });
+
+        auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
+            .setGeometryType(vk::GeometryTypeKHR::eInstances)
+            .setGeometry({ .instances = instancesData })
+            .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+
+        auto buildInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
+            .setType(vk::AccelerationStructureTypeKHR::eTopLevel)
+            .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)
+            .setMode(vk::BuildAccelerationStructureModeKHR::eUpdate)
+            .setSrcAccelerationStructure(tlasAccel[currentFrame])
+            .setDstAccelerationStructure(tlasAccel[currentFrame])
+            .setGeometries(instanceGeometry)
+            .setScratchData({ .deviceAddress = tlasScratchBufs[currentFrame].deviceAddress });
+
+        auto buildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
+            .setPrimitiveCount(1)
+            .setFirstVertex(0)
+            .setPrimitiveOffset(0)
+            .setTransformOffset(0);
+
+        commandBuffer.buildAccelerationStructuresKHR(buildInfo, &buildRangeInfo);
+
+        auto barrier = vk::MemoryBarrier()
+            .setSrcAccessMask(vk::AccessFlagBits::eAccelerationStructureWriteKHR)
+            .setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR);
+
+        commandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+            vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+            {},
+            barrier,
+            nullptr,
+            nullptr
+        );
         
         commandBuffer.traceRaysKHR(sbtRegions[0], sbtRegions[1], sbtRegions[2], {}, RT_WIDTH, RT_HEIGHT, 1u);
 
@@ -1010,7 +1049,7 @@ namespace
         for(int frame = 0; frame < NB_FRAMES_IN_FLIGHT; frame++)
         {
             // BLAS d'abord
-            std::vector<vk::AabbPositionsKHR> aabbs = {{-1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f}};        
+            std::vector<vk::AabbPositionsKHR> aabbs = {{-1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f}};        
             vk::DeviceSize bufSize = aabbs.size() * sizeof(aabbs[0]);
 
             auto stagingBuf = createBuffer(bufSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
@@ -1024,7 +1063,7 @@ namespace
             aabbBufs[frame] = createBuffer(bufSize, vk::BufferUsageFlagBits::eShaderDeviceAddress 
                                                          | vk::BufferUsageFlagBits::eTransferDst 
                                                          | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR, 
-                                                  vk::MemoryPropertyFlagBits::eDeviceLocal);
+                                                    vk::MemoryPropertyFlagBits::eDeviceLocal);
             
             copyBuffer(stagingBuf.buf, aabbBufs[frame].buf, bufSize);
             stagingBuf.destroy();
@@ -1115,8 +1154,8 @@ namespace
         
             auto blasSubmitInfo = vk::SubmitInfo()
                 .setCommandBuffers(blasCommandBuffer);
-            graphicsQueue.submit({blasSubmitInfo});
-            graphicsQueue.waitIdle();
+            presentQueue.submit({blasSubmitInfo});
+            presentQueue.waitIdle();
             
             blasDescInfo[frame].setAccelerationStructures(blasAccel[frame]);
         
@@ -1153,7 +1192,8 @@ namespace
             // remplir tlasBuf, tlasBufMemory, tlasBufDeviceAddress, tlasAccel, tlasDescInfo
             auto tlasBuildGeometryInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
                 .setType(vk::AccelerationStructureTypeKHR::eTopLevel)
-                .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace)
+                .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)
+                .setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
                 .setGeometries(instanceGeometry);
             
             vk::AccelerationStructureBuildSizesInfoKHR tlasBuildSizesInfo = device.getAccelerationStructureBuildSizesKHR(

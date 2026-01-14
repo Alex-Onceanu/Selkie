@@ -10,13 +10,13 @@ void main()
 {
     vec2 uv = vec2(gl_LaunchIDEXT.xy / gl_LaunchSizeEXT.xy);
     uv = 2. * uv - 1.;
-    float fov = 70.;
-    vec3 cameraPos = vec3(0., 0., 0.);
-    vec3 rayDir = vec3(uv.x, uv.y, 2. / tan(0.5 * fov));
+    float fov = 70. * 3.1416 / 180.;
+    vec3 cameraPos = vec3(0., 0., 5.);
+    vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * fov));
     float distToScreen = length(rayDir);
 
     // tlas, flags, mask, sbt offsets, origin, tMin, dir, tMax, payloadLocation
-    traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 0, 0, cameraPos, 0., rayDir, 50., 0);
+    traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 0, 0, cameraPos + distToScreen * normalize(rayDir), 0., normalize(rayDir), 50., 0);
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitColor, 0.0));
 }
