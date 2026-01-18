@@ -19,8 +19,17 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #include "renderer.hpp"
 #include "window.hpp"
 
-#define RT_WIDTH 1366u
-#define RT_HEIGHT 768u
+#define RT_WIDTH 3840u
+#define RT_HEIGHT 2160u
+
+// #define RT_WIDTH 1920u
+// #define RT_HEIGHT 1080u
+
+// #define RT_WIDTH 1366u
+// #define RT_HEIGHT 768u
+
+// #define RT_WIDTH 960u
+// #define RT_HEIGHT 540u
 
 // structs
 namespace
@@ -800,9 +809,15 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(5));
 
-        // Ici on envoie aux shaders des valeurs pour les "uniform"
+        vk::PushConstantRange pushRange;
+        pushRange.setOffset(0);
+        pushRange.setSize(sizeof(float));
+        pushRange.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR);
+
+        // Ici on envoie aux shaders des valeurs pour les "uniform" (push constants et descriptor sets)
         auto plCreateInfo = vk::PipelineLayoutCreateInfo()
-            .setSetLayouts(descriptorSetLayout);
+            .setSetLayouts(descriptorSetLayout)
+            .setPushConstantRanges(pushRange);
         
         pipelineLayout = device.createPipelineLayout(plCreateInfo);
         
@@ -839,7 +854,7 @@ namespace
     
     // Permet d'écrire les commandes qu'on souhaite dans un command buffer
     // Cette commande s'adresse au rendu sur une image de la swapChain, d'indice imageIndex
-    void recordCommandBuffer(vk::CommandBuffer& commandBuffer, uint32_t imageIndex)
+    void recordCommandBuffer(vk::CommandBuffer& commandBuffer, uint32_t imageIndex, float t)
     {
         vk::CommandBufferBeginInfo beginInfo {};
         // cf vk::CommandBufferUsageFlagBits::eSimultaneousUse / eRenderPassContinue / eOneTimeSubmit
@@ -892,7 +907,8 @@ namespace
             nullptr,
             nullptr
         );
-        
+
+        commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eRaygenKHR, 0, sizeof(float), &t);
         commandBuffer.traceRaysKHR(sbtRegions[0], sbtRegions[1], sbtRegions[2], {}, RT_WIDTH, RT_HEIGHT, 1u);
 
         vk::Image srcImage = rtImages[currentFrame];
@@ -917,7 +933,7 @@ namespace
             srcImage, vk::ImageLayout::eTransferSrcOptimal,
             dstImage, vk::ImageLayout::eTransferDstOptimal,
             blitRegion,
-            vk::Filter::eNearest
+            vk::Filter::eLinear
         );
 
         // TODO : enlever spécifiquement ce setImageLayout, je crois qu'il est useless
@@ -1058,7 +1074,7 @@ namespace
     void createAccelerationStructures()
     {
         // BLAS d'abord
-        // all spheres, then all planes, etc
+        // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
         std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 2.0f, 1.0f}}, {{-1000000.f, -0.1f, -1000000.f, 1000000.f, 0.1f, 1000000.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
@@ -1512,7 +1528,7 @@ std::shared_ptr<sk::Window> sk::initWindow(unsigned int width, unsigned int heig
     return window;
 }
 
-void sk::draw()
+void sk::draw(float t)
 {
     // On commence par attendre que la frame précédente soit finie
     if(device.waitForFences(1, &readyForNextFrameFences[currentFrame], vk::True, UINT64_MAX) != vk::Result::eSuccess)
@@ -1533,7 +1549,7 @@ void sk::draw()
     
     // Ensuite il faut record ce qu'on veut faire dans commandBuffer, pour l'image d'indice imgId
     // commandBuffers[currentFrame].reset();
-    recordCommandBuffer(commandBuffers[currentFrame], currentSwapChainImage);
+    recordCommandBuffer(commandBuffers[currentFrame], currentSwapChainImage, t);
     
     // On voudra attendre le sémaphore imageAvailable au moment de la copie de rtImage sur swapChainImage
     vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eTransfer };

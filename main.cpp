@@ -7,16 +7,26 @@
 int main()
 {
     auto startTime = std::chrono::high_resolution_clock::now();
+    auto prevTime = startTime;
     try
     {
         auto window = sk::initWindow(1366, 768);
+        int nbFrames = 0;
 
         while(window->isAlive())
         {
             auto currentTime = std::chrono::high_resolution_clock::now();
             float elapsedTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-            
-            sk::draw();
+            float timeSinceLastSecond = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - prevTime).count();
+
+            if(timeSinceLastSecond >= 1.0f)
+            {
+                std::cout << "FPS : " << nbFrames << std::endl;
+                nbFrames = 0;
+                prevTime = currentTime;
+            }
+            sk::draw(elapsedTime);
+            nbFrames++;
         }
         sk::end();
     }
