@@ -5,7 +5,7 @@ void main()
 {
     vec3 rayPos = gl_ObjectRayOriginEXT;
     vec3 rayDir = gl_ObjectRayDirectionEXT;
-    vec3 p = rayPos;
+    vec3 p = rayPos - vec3(0., 1., 0.);
     float delta = 4. * (dot(p, rayDir) * dot(p, rayDir) - dot(rayDir, rayDir) * (dot(p, p) - 1.));
     if(delta >= 0.)
     {
