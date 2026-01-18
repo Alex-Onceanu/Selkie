@@ -110,14 +110,14 @@ namespace
     vk::WriteDescriptorSetAccelerationStructureKHR tlasDescInfo;
     vk::AccelerationStructureKHR tlasAccel;
     
-    Buffer aabbBufs;
+    std::vector<Buffer> aabbBufs;
     Buffer tlasInstances;
     Buffer tlasScratchBufs;
-    Buffer blasScratchBufs;
     
+    Buffer blasScratchBuf;
     vk::AccelerationStructureKHR blasAccel;
     vk::WriteDescriptorSetAccelerationStructureKHR blasDescInfo;
-    Buffer blasBufs;
+    Buffer blasBuf;
     
     std::vector<vk::StridedDeviceAddressRegionKHR> sbtRegions{};
     std::vector<vk::DescriptorSetLayoutBinding> bindings{};
@@ -727,19 +727,33 @@ namespace
          * - chaque type d'objet aura son Group contenant un intersection, un closest hit et un any hit
          */
 
+#ifdef _WINDOWS
         auto rgenCode  = readFile("../../../shaders/out/tmp.rgen.spv");
         auto rmissCode = readFile("../../../shaders/out/tmp.rmiss.spv");
-        auto rchitCode = readFile("../../../shaders/out/tmp.rchit.spv");
-        auto rintCode  = readFile("../../../shaders/out/tmp.rint.spv");
-        
+        auto rchitSphereCode = readFile("../shaders/out/sphere.rchit.spv");
+        auto rintSphereCode  = readFile("../shaders/out/sphere.rint.spv");
+        auto rchitGroundCode = readFile("../shaders/out/ground.rchit.spv");
+        auto rintGroundCode  = readFile("../shaders/out/ground.rint.spv");
+#else
+        auto rgenCode  = readFile("../shaders/out/tmp.rgen.spv");
+        auto rmissCode = readFile("../shaders/out/tmp.rmiss.spv");
+        auto rchitSphereCode = readFile("../shaders/out/sphere.rchit.spv");
+        auto rintSphereCode  = readFile("../shaders/out/sphere.rint.spv");
+        auto rchitGroundCode = readFile("../shaders/out/ground.rchit.spv");
+        auto rintGroundCode  = readFile("../shaders/out/ground.rint.spv");
+#endif
         shaderModules.push_back(createShaderModule(rgenCode));
         shaderModules.push_back(createShaderModule(rmissCode));
-        shaderModules.push_back(createShaderModule(rchitCode));
-        shaderModules.push_back(createShaderModule(rintCode));
+        shaderModules.push_back(createShaderModule(rchitSphereCode));
+        shaderModules.push_back(createShaderModule(rintSphereCode));
+        shaderModules.push_back(createShaderModule(rchitGroundCode));
+        shaderModules.push_back(createShaderModule(rintGroundCode));
 
-        vk::ShaderStageFlagBits stageNames[] = { 
+        vk::ShaderStageFlagBits stageTypes[] = { 
             vk::ShaderStageFlagBits::eRaygenKHR,
             vk::ShaderStageFlagBits::eMissKHR,
+            vk::ShaderStageFlagBits::eClosestHitKHR,
+            vk::ShaderStageFlagBits::eIntersectionKHR,
             vk::ShaderStageFlagBits::eClosestHitKHR,
             vk::ShaderStageFlagBits::eIntersectionKHR
         };
@@ -749,7 +763,7 @@ namespace
         for(int i = 0; i < shaderModules.size(); i++)
         {
             stages.push_back(vk::PipelineShaderStageCreateInfo()
-                                .setStage(stageNames[i])
+                                .setStage(stageTypes[i])
                                 .setModule(shaderModules[i])
                                 .setPName("main"));
         }
@@ -770,13 +784,21 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
 
-        // procedural group
+        // sphere group
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
             .setClosestHitShader(2)
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(3));
+
+        // Plane group (ground)
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
+            .setGeneralShader(vk::ShaderUnusedKHR)
+            .setClosestHitShader(4)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setIntersectionShader(5));
 
         // Ici on envoie aux shaders des valeurs pour les "uniform"
         auto plCreateInfo = vk::PipelineLayoutCreateInfo()
@@ -1036,31 +1058,40 @@ namespace
     void createAccelerationStructures()
     {
         // BLAS d'abord
-        std::vector<vk::AabbPositionsKHR> aabbs = {{-1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f}};        
-        vk::DeviceSize bufSize = aabbs.size() * sizeof(aabbs[0]);
-
-        auto stagingBuf = createBuffer(bufSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-                    vk::MemoryPropertyFlagBits::eHostCoherent | vk::MemoryPropertyFlagBits::eHostVisible);
-
-        void* data = device.mapMemory(stagingBuf.memory, 0, bufSize);
-        memcpy(data, aabbs.data(), (size_t)bufSize);
-        device.unmapMemory(stagingBuf.memory);
-            
-        // on met le staging buffer dans le vrai buffer
-        aabbBufs = createBuffer(bufSize, vk::BufferUsageFlagBits::eShaderDeviceAddress 
-                                                | vk::BufferUsageFlagBits::eTransferDst 
-                                                | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR, 
-                                         vk::MemoryPropertyFlagBits::eDeviceLocal);
-            
-        copyBuffer(stagingBuf.buf, aabbBufs.buf, bufSize);
-        stagingBuf.destroy();
+        // all spheres, then all planes, etc
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 2.0f, 1.0f}}, {{-10.f, -0.1f, -10.f, 10.f, 0.1f, 10.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
-        auto barrier = vk::BufferMemoryBarrier()
-            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR)
-            .setBuffer       (aabbBufs.buf)
-            .setSize         (VK_WHOLE_SIZE);
+        std::vector<vk::BufferMemoryBarrier> barriers{};
+        uint32_t primitiveCount = 0;
+        for(const auto& aabb : aabbs)
+        {
+            vk::DeviceSize bufSize = aabb.size() * sizeof(aabb[0]);
+
+            auto stagingBuf = createBuffer(bufSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                        vk::MemoryPropertyFlagBits::eHostCoherent | vk::MemoryPropertyFlagBits::eHostVisible);
+    
+            void* data = device.mapMemory(stagingBuf.memory, 0, bufSize);
+            memcpy(data, aabb.data(), (size_t)bufSize);
+            device.unmapMemory(stagingBuf.memory);
+            
+            // on met le staging buffer dans le vrai buffer
+            aabbBufs.push_back(createBuffer(bufSize,  vk::BufferUsageFlagBits::eShaderDeviceAddress 
+                                                    | vk::BufferUsageFlagBits::eTransferDst 
+                                                    | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR, 
+                                             vk::MemoryPropertyFlagBits::eDeviceLocal));
+
+            copyBuffer(stagingBuf.buf, aabbBufs.back().buf, bufSize);
+            stagingBuf.destroy();
+            
+            barriers.push_back(vk::BufferMemoryBarrier()
+                .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+                .setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR)
+                .setBuffer       (aabbBufs.back().buf)
+                .setSize         (VK_WHOLE_SIZE));
+
+            primitiveCount += aabb.size();
+        }
 
         auto tmpCommandBufInfo = vk::CommandBufferAllocateInfo()
             .setCommandPool(commandPool)
@@ -1071,7 +1102,7 @@ namespace
         tmpCommandBuf.pipelineBarrier(
             vk::PipelineStageFlagBits::eTransfer,
             vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-            {}, 0, nullptr, 1, &barrier, 0, nullptr
+            {}, 0, nullptr, 2, barriers.data(), 0, nullptr
         );
         tmpCommandBuf.end();
 
@@ -1080,44 +1111,47 @@ namespace
         graphicsQueue.submit({tmpSubmitInfo});
         graphicsQueue.waitIdle();
 
-        auto aabbData = vk::AccelerationStructureGeometryAabbsDataKHR()
-            .setData({aabbBufs.deviceAddress})
-            .setStride(sizeof(vk::AabbPositionsKHR));
-            
-        const uint32_t primitiveCount = 1;
+        std::vector<vk::AccelerationStructureGeometryKHR> geometries{};
+        for(const auto& aabbBuf : aabbBufs)
+        {
+            auto tmpAabbData = vk::AccelerationStructureGeometryAabbsDataKHR()
+                .setData({aabbBuf.deviceAddress})
+                .setStride(sizeof(vk::AabbPositionsKHR));
 
-        auto geometry = vk::AccelerationStructureGeometryKHR()
-            .setGeometryType(vk::GeometryTypeKHR::eAabbs)
-            .setGeometry({.aabbs = aabbData})
-            .setFlags(vk::GeometryFlagBitsKHR::eOpaque); // TODO : remove this
-            
+            geometries.push_back(vk::AccelerationStructureGeometryKHR()
+                .setGeometryType(vk::GeometryTypeKHR::eAabbs)
+                .setGeometry({.aabbs = tmpAabbData})
+                .setFlags(vk::GeometryFlagBitsKHR::eOpaque)); // TODO : remove this
+        }
+
         // remplir blasBuf, blasBufMemory, blasBufDeviceAddress, blasAccel, blasDescInfo
         auto buildGeometryInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
             .setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
             .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)
-            .setGeometries(geometry);
-            
+            .setGeometries(geometries);
+        
+        uint32_t primitiveCounts[] = {1U,1U};
         vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo = device.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice, buildGeometryInfo, primitiveCount);
+            vk::AccelerationStructureBuildTypeKHR::eDevice, buildGeometryInfo, primitiveCounts); 
                 
         vk::DeviceSize size = buildSizesInfo.accelerationStructureSize;
-        blasBufs = createBuffer(size, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
+        blasBuf = createBuffer(size, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
                                     | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
                                         vk::MemoryPropertyFlagBits::eDeviceLocal); 
-            
+        
         auto accelInfo = vk::AccelerationStructureCreateInfoKHR()
-            .setBuffer(blasBufs.buf)
+            .setBuffer(blasBuf.buf)
             .setSize(size)
             .setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
             
         blasAccel = device.createAccelerationStructureKHR(accelInfo);
             
-        blasScratchBufs = createBuffer(buildSizesInfo.buildScratchSize, 
+        blasScratchBuf = createBuffer(buildSizesInfo.buildScratchSize, 
                                                 vk::BufferUsageFlagBits::eStorageBuffer 
                                             | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                                 vk::MemoryPropertyFlagBits::eDeviceLocal);
-                        
-        buildGeometryInfo.setScratchData({blasScratchBufs.deviceAddress})
+
+        buildGeometryInfo.setScratchData({blasScratchBuf.deviceAddress})
             .setDstAccelerationStructure(blasAccel);
                         
         // TODO : est-ce que c'est vrmt compatible avec notre command pool ?
@@ -1144,8 +1178,6 @@ namespace
         graphicsQueue.submit({blasSubmitInfo});
         graphicsQueue.waitIdle();
 
-        3 + 7;
-            
         blasDescInfo.setAccelerationStructures(blasAccel);
         
         // TLAS time babyy
@@ -1159,7 +1191,7 @@ namespace
         auto accelInstance = vk::AccelerationStructureInstanceKHR()
             .setTransform(transformMatrix)
             .setMask(0xFF)
-            .setAccelerationStructureReference(blasBufs.deviceAddress)
+            .setAccelerationStructureReference(blasBuf.deviceAddress)
             .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
             
         tlasInstances = createBuffer(sizeof(vk::AccelerationStructureInstanceKHR), 
@@ -1278,7 +1310,7 @@ namespace
         uint32_t handleSize = rtProperties.shaderGroupHandleSize;
         uint32_t handleSizeAligned = rtProperties.shaderGroupHandleAlignment;
         uint32_t groupCount = static_cast<uint32_t>(shaderGroups.size());
-        uint32_t sbtSize = groupCount * handleSize; // TODO : Aligned ?
+        uint32_t sbtSize = groupCount * handleSize;
 
         // TODO : se renseigner sur shader record (comment utiliser des matériaux (ou autres params) différents par instance ?)
 
@@ -1295,7 +1327,7 @@ namespace
                                                     | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                         vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            // on écrit une adresse mémoire à une adresse mémoire (astuce de Quine ?)
+            // on écrit une adresse mémoire à une adresse mémoire
             // par contre ce qui m'étonne c'est qu'on écrit l'adresse mémoire de son propre programme au lieu d'écrire celle des autres shaders
             void* mapped = device.mapMemory(rgenTable.memory, 0, handleSize);
             memcpy(mapped, handleStorage.data() + 0 * handleSize, handleSize);
@@ -1428,14 +1460,14 @@ void sk::end()
         device.freeMemory(rtImageMemories[f]);
         device.destroyImage(rtImages[f]);
     }
-    blasBufs.destroy();
+    blasBuf.destroy();
     tlasBufs.destroy();
     device.destroyAccelerationStructureKHR(blasAccel);
     device.destroyAccelerationStructureKHR(tlasAccel);
-    aabbBufs.destroy();
+    for(auto& a : aabbBufs) a.destroy();
     tlasInstances.destroy();
     tlasScratchBufs.destroy();
-    blasScratchBufs.destroy();
+    blasScratchBuf.destroy();
     
     device.destroyPipeline(pipeline);
     device.destroyPipelineLayout(pipelineLayout);
