@@ -4,6 +4,7 @@
 struct payload_t {
     float time;
     vec3 hitColor;
+    float minDist;
 };
 
 layout(location = 0) rayPayloadInEXT payload_t payload;
@@ -90,5 +91,6 @@ vec3 background(vec3 d)
 
 void main()
 {
+    payload.minDist = 1. / 0.;
     payload.hitColor = background(gl_WorldRayDirectionEXT);
 }

@@ -19,17 +19,14 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #include "renderer.hpp"
 #include "window.hpp"
 
-#define RT_WIDTH 3840u
-#define RT_HEIGHT 2160u
+// #define RT_WIDTH 3840u
+// #define RT_HEIGHT 2160u
 
-// #define RT_WIDTH 1920u
-// #define RT_HEIGHT 1080u
+#define RT_WIDTH 1920u
+#define RT_HEIGHT 1080u
 
 // #define RT_WIDTH 1366u
 // #define RT_HEIGHT 768u
-
-// #define RT_WIDTH 960u
-// #define RT_HEIGHT 540u
 
 // structs
 namespace
@@ -1075,7 +1072,7 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 2.0f, 1.0f}}, {{-1000000.f, -0.1f, -1000000.f, 1000000.f, 0.1f, 1000000.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 20.0f, 1.0f}}, {{-1000.f, -0.1f, -1000.f, 1000.f, 0.1f, 1000.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
