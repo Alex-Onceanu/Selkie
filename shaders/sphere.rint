@@ -3,16 +3,20 @@
 
 void main()
 {
-    // TODO : how to implement ray marching here without payload ? Any-hit ??
-    vec3 rayPos = gl_ObjectRayOriginEXT;
-    vec3 rayDir = gl_ObjectRayDirectionEXT;
-    vec3 p = rayPos - vec3(0., 1.8, 0.);
-    float delta = 4. * (dot(p, rayDir) * dot(p, rayDir) - dot(rayDir, rayDir) * (dot(p, p) - 1.));
-    if(delta >= 0.)
-    {
-        vec2 t = vec2((-2. * dot(p, rayDir) - sqrt(delta)) / (2. * dot(rayDir, rayDir)), (-2. * dot(p, rayDir) + sqrt(delta)) / (2. * dot(rayDir, rayDir)));
+    reportIntersectionEXT(0.01, 0U); // TODO : calculer intersection avec l'AABB
+    // if we just report intersection with 0.1, the pipeline thinks the object is near the camera
+    // so it will be in front of the other objects bruh
 
-        if(t.x < t.y)
-            reportIntersectionEXT(t.x, 0U);
-    }
+    // TODO : how to implement ray marching here without payload ? Any-hit ??
+    // vec3 rayPos = gl_ObjectRayOriginEXT;
+    // vec3 rayDir = gl_ObjectRayDirectionEXT;
+    // vec3 p = rayPos - vec3(0., 1.0, 0.);
+    // float delta = 4. * (dot(p, rayDir) * dot(p, rayDir) - dot(rayDir, rayDir) * (dot(p, p) - 1.));
+    // if(delta >= 0.)
+    // {
+    //     vec2 t = vec2((-2. * dot(p, rayDir) - sqrt(delta)) / (2. * dot(rayDir, rayDir)), (-2. * dot(p, rayDir) + sqrt(delta)) / (2. * dot(rayDir, rayDir)));
+
+    //     if(t.x < t.y)
+    //         reportIntersectionEXT(t.x, 0U);
+    // }
 }

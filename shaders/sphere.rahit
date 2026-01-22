@@ -1,0 +1,61 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_debug_printf : enable
+
+struct payload_t {
+    float time;
+    vec3 hitColor;
+    float minDist;
+    float distToMinDist;
+    float tHit;
+};
+
+layout(location = 0) rayPayloadInEXT payload_t payload;
+
+void main()
+{
+    // debugPrintfEXT("Any hit ! Time : %f\n", payload.time);
+    // payload.hitColor = vec3(0.5, 0.3, 0.7);
+    // payload.tHit = 0.2;
+    // terminateRayEXT;
+    // return;
+    if(payload.tHit < 1e3)
+    {
+        ignoreIntersectionEXT;
+        return;
+    }
+    const int MAX_IT = 100;
+    const float too_close = 0.0001;
+    const float too_far = 8.;
+    vec3 p = gl_WorldRayOriginEXT;
+    vec3 rd = normalize(gl_WorldRayDirectionEXT);
+    float t = 0.;
+    for(int i = 0; i < MAX_IT; i++)
+    {
+        float safeDist = length(p - vec3(0., 1., 0.)) - 1.;
+
+        p += rd * safeDist;
+        t += safeDist;
+
+        if(safeDist < payload.minDist)
+        {
+            payload.distToMinDist = length(p - gl_WorldRayOriginEXT) / length(gl_WorldRayOriginEXT);
+            payload.minDist = safeDist;
+        }
+
+        if(t > too_far)
+        {
+            ignoreIntersectionEXT;
+            return;
+        }
+
+        if(safeDist < too_close)
+        {
+            // payload.hitColor = vec3(0.5, 0.3, 0.7);
+            payload.tHit = length(p - gl_WorldRayOriginEXT) / length(gl_WorldRayOriginEXT);
+            terminateRayEXT;
+            return;
+        }
+    }
+    ignoreIntersectionEXT;
+}

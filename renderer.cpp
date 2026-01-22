@@ -733,27 +733,16 @@ namespace
          * - chaque type d'objet aura son Group contenant un intersection, un closest hit et un any hit
          */
 
-#ifdef _WINDOWS
-        auto rgenCode  = readFile("../../../shaders/out/tmp.rgen.spv");
-        auto rmissCode = readFile("../../../shaders/out/tmp.rmiss.spv");
-        auto rchitSphereCode = readFile("../shaders/out/sphere.rchit.spv");
-        auto rintSphereCode  = readFile("../shaders/out/sphere.rint.spv");
-        auto rchitGroundCode = readFile("../shaders/out/ground.rchit.spv");
-        auto rintGroundCode  = readFile("../shaders/out/ground.rint.spv");
-#else
-        auto rgenCode  = readFile("../shaders/out/tmp.rgen.spv");
-        auto rmissCode = readFile("../shaders/out/tmp.rmiss.spv");
-        auto rchitSphereCode = readFile("../shaders/out/sphere.rchit.spv");
-        auto rintSphereCode  = readFile("../shaders/out/sphere.rint.spv");
-        auto rchitGroundCode = readFile("../shaders/out/ground.rchit.spv");
-        auto rintGroundCode  = readFile("../shaders/out/ground.rint.spv");
-#endif
-        shaderModules.push_back(createShaderModule(rgenCode));
-        shaderModules.push_back(createShaderModule(rmissCode));
-        shaderModules.push_back(createShaderModule(rchitSphereCode));
-        shaderModules.push_back(createShaderModule(rintSphereCode));
-        shaderModules.push_back(createShaderModule(rchitGroundCode));
-        shaderModules.push_back(createShaderModule(rintGroundCode));
+        std::vector<std::string> filePaths = {
+            "tmp.rgen", 
+            "tmp.rmiss", 
+            "sphere.rchit", 
+            "sphere.rint", 
+            "ground.rchit", 
+            "ground.rint",
+            "sphere.rahit",
+            "ground.rahit"
+        };
 
         vk::ShaderStageFlagBits stageTypes[] = { 
             vk::ShaderStageFlagBits::eRaygenKHR,
@@ -761,13 +750,21 @@ namespace
             vk::ShaderStageFlagBits::eClosestHitKHR,
             vk::ShaderStageFlagBits::eIntersectionKHR,
             vk::ShaderStageFlagBits::eClosestHitKHR,
-            vk::ShaderStageFlagBits::eIntersectionKHR
+            vk::ShaderStageFlagBits::eIntersectionKHR,
+            vk::ShaderStageFlagBits::eAnyHitKHR,
+            vk::ShaderStageFlagBits::eAnyHitKHR
         };
 
         std::vector<vk::PipelineShaderStageCreateInfo> stages;
-
-        for(int i = 0; i < shaderModules.size(); i++)
+        for(int i = 0; i < filePaths.size(); i++)
         {
+            auto path = "../shaders/out/" + filePaths[i] + ".spv";
+#ifdef _WINDOWS
+            path = "../../" + path; // for visual studio who generates the .exe far from the source folder
+#endif
+            auto code = readFile(path);
+            shaderModules.push_back(createShaderModule(code));
+
             stages.push_back(vk::PipelineShaderStageCreateInfo()
                                 .setStage(stageTypes[i])
                                 .setModule(shaderModules[i])
@@ -795,7 +792,7 @@ namespace
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
             .setClosestHitShader(2)
-            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(6)
             .setIntersectionShader(3));
 
         // Plane group (ground)
@@ -803,7 +800,7 @@ namespace
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
             .setClosestHitShader(4)
-            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(7)
             .setIntersectionShader(5));
 
         vk::PushConstantRange pushRange;
@@ -873,7 +870,7 @@ namespace
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
             .setGeometry({ .instances = instancesData })
-            .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+            .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation);
 
         auto buildInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
             .setType(vk::AccelerationStructureTypeKHR::eTopLevel)
@@ -1072,7 +1069,7 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 20.0f, 1.0f}}, {{-1000.f, -0.1f, -1000.f, 1000.f, 0.1f, 1000.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 2.0f, 1.0f}}, {{-1000.f, -0.5f, -1000.f, 1000.f, 0.5f, 1000.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1134,7 +1131,7 @@ namespace
             geometries.push_back(vk::AccelerationStructureGeometryKHR()
                 .setGeometryType(vk::GeometryTypeKHR::eAabbs)
                 .setGeometry({.aabbs = tmpAabbData})
-                .setFlags(vk::GeometryFlagBitsKHR::eOpaque)); // TODO : remove this
+                .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation)); // TODO : remove this
         }
 
         // remplir blasBuf, blasBufMemory, blasBufDeviceAddress, blasAccel, blasDescInfo
@@ -1222,11 +1219,11 @@ namespace
         auto instancesData = vk::AccelerationStructureGeometryInstancesDataKHR()
             .setArrayOfPointers(false)
             .setData({tlasInstances.deviceAddress});
-            
+
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
             .setGeometry({.instances = instancesData})
-            .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+            .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation);
             
         // remplir tlasBuf, tlasBufMemory, tlasBufDeviceAddress, tlasAccel, tlasDescInfo
         auto tlasBuildGeometryInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
