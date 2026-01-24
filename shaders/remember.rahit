@@ -1,0 +1,23 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_debug_printf : enable
+
+#define MAX_MERGES 8
+struct payload_t {
+    float time;
+    vec3 hitColor;
+    float minDist;
+    float distToMinDist;
+    float tHit;
+    int nbHits;
+    int hitIds[MAX_MERGES];
+};
+
+layout(location = 0) rayPayloadInEXT payload_t payload;
+
+void main()
+{
+    // remember my id so that you can raymarch in the callable shader called by the miss 
+    if(payload.nbHits < MAX_MERGES)
+        payload.hitIds[payload.nbHits++] = gl_PrimitiveID;
+}

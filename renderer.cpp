@@ -37,11 +37,6 @@ namespace
         math::vec3 clr;
     };
 
-    struct UniformBufferObject {
-        alignas(4) float uTime;
-        alignas(16) math::vec3 uClr;
-    };
-
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         std::optional<uint32_t> presentFamily;
@@ -74,6 +69,13 @@ namespace
             device.freeMemory(memory);
             device.destroyBuffer(buf);
         }
+    };
+
+    struct alignas(32) Edit {
+        alignas(16) math::vec4 pos;
+        alignas(4) int type;
+        alignas(4) float scale;
+        // [...]
     };
 };
 
@@ -117,8 +119,8 @@ namespace
     vk::AccelerationStructureKHR tlasAccel;
     
     std::vector<Buffer> aabbBufs;
-    Buffer tlasInstances;
-    Buffer tlasScratchBufs;
+    Buffer tlasInstance;
+    Buffer tlasScratchBuf;
     
     Buffer blasScratchBuf;
     vk::AccelerationStructureKHR blasAccel;
@@ -130,7 +132,10 @@ namespace
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups{};
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
-    
+
+    std::vector<Edit> edits{}; // TODO : allocate this on the heap
+    std::vector<Buffer> ssbos{};
+
     vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout descriptorSetLayout;
     vk::PipelineLayout pipelineLayout;
@@ -734,24 +739,16 @@ namespace
          */
 
         std::vector<std::string> filePaths = {
-            "tmp.rgen", 
-            "tmp.rmiss", 
-            "sphere.rchit", 
-            "sphere.rint", 
-            "ground.rchit", 
-            "ground.rint",
-            "sphere.rahit",
-            "ground.rahit"
+            "main.rgen", 
+            "main.rmiss", 
+            "nothing.rint",
+            "remember.rahit"
         };
 
         vk::ShaderStageFlagBits stageTypes[] = { 
             vk::ShaderStageFlagBits::eRaygenKHR,
             vk::ShaderStageFlagBits::eMissKHR,
-            vk::ShaderStageFlagBits::eClosestHitKHR,
             vk::ShaderStageFlagBits::eIntersectionKHR,
-            vk::ShaderStageFlagBits::eClosestHitKHR,
-            vk::ShaderStageFlagBits::eIntersectionKHR,
-            vk::ShaderStageFlagBits::eAnyHitKHR,
             vk::ShaderStageFlagBits::eAnyHitKHR
         };
 
@@ -787,21 +784,14 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
 
-        // sphere group
+        // hit group : même groupe pour tous les objets parce qu'on fait quasi rien dans anyhit et intersection
+        // la différence dans les calculs sera dans les callable shaders, appelés depuis un même rmiss
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
-            .setClosestHitShader(2)
-            .setAnyHitShader(6)
-            .setIntersectionShader(3));
-
-        // Plane group (ground)
-        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
-            .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
-            .setGeneralShader(vk::ShaderUnusedKHR)
-            .setClosestHitShader(4)
-            .setAnyHitShader(7)
-            .setIntersectionShader(5));
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(3)
+            .setIntersectionShader(2));
 
         vk::PushConstantRange pushRange;
         pushRange.setOffset(0);
@@ -865,7 +855,7 @@ namespace
 
         auto instancesData = vk::AccelerationStructureGeometryInstancesDataKHR()
             .setArrayOfPointers(false)
-            .setData({ tlasInstances.deviceAddress });
+            .setData({ tlasInstance.deviceAddress });
 
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
@@ -879,7 +869,7 @@ namespace
             .setSrcAccelerationStructure(tlasAccel)
             .setDstAccelerationStructure(tlasAccel)
             .setGeometries(instanceGeometry)
-            .setScratchData({ .deviceAddress = tlasScratchBufs.deviceAddress });
+            .setScratchData({ .deviceAddress = tlasScratchBuf.deviceAddress });
 
         auto buildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
             .setPrimitiveCount(1)
@@ -1013,7 +1003,7 @@ namespace
     
         vk::MemoryAllocateInfo allocInfo{
             .allocationSize = memReq.size,
-            .memoryTypeIndex = findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+            .memoryTypeIndex = findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent | properties)
         };
 
         auto flagsInfo = vk::MemoryAllocateFlagsInfo().setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
@@ -1069,7 +1059,7 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 2.0f, 1.0f}}, {{-1000.f, -0.5f, -1000.f, 1000.f, 0.5f, 1000.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 2.0f, 1.0f}, {-1000.f, -0.5f, -1000.f, 1000.f, 0.5f, 1000.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1112,7 +1102,7 @@ namespace
         tmpCommandBuf.pipelineBarrier(
             vk::PipelineStageFlagBits::eTransfer,
             vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-            {}, 0, nullptr, 2, barriers.data(), 0, nullptr
+            {}, 0, nullptr, aabbs.size(), barriers.data(), 0, nullptr
         );
         tmpCommandBuf.end();
 
@@ -1131,7 +1121,7 @@ namespace
             geometries.push_back(vk::AccelerationStructureGeometryKHR()
                 .setGeometryType(vk::GeometryTypeKHR::eAabbs)
                 .setGeometry({.aabbs = tmpAabbData})
-                .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation)); // TODO : remove this
+                .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation));
         }
 
         // remplir blasBuf, blasBufMemory, blasBufDeviceAddress, blasAccel, blasDescInfo
@@ -1203,7 +1193,7 @@ namespace
             .setAccelerationStructureReference(blasBuf.deviceAddress)
             .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
             
-        tlasInstances = createBuffer(sizeof(vk::AccelerationStructureInstanceKHR), 
+        tlasInstance = createBuffer(sizeof(vk::AccelerationStructureInstanceKHR), 
                                             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR 
                                           | vk::BufferUsageFlagBits::eStorageBuffer 
                                           | vk::BufferUsageFlagBits::eShaderDeviceAddress,
@@ -1211,14 +1201,14 @@ namespace
                                           | vk::MemoryPropertyFlagBits::eHostVisible);
         
         {
-            void* data = device.mapMemory(tlasInstances.memory, 0, sizeof(vk::AccelerationStructureInstanceKHR));
+            void* data = device.mapMemory(tlasInstance.memory, 0, sizeof(vk::AccelerationStructureInstanceKHR));
             memcpy(data, &accelInstance, sizeof(vk::AccelerationStructureInstanceKHR));
-            device.unmapMemory(tlasInstances.memory);
+            device.unmapMemory(tlasInstance.memory);
         }
 
         auto instancesData = vk::AccelerationStructureGeometryInstancesDataKHR()
             .setArrayOfPointers(false)
-            .setData({tlasInstances.deviceAddress});
+            .setData({tlasInstance.deviceAddress});
 
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
@@ -1246,12 +1236,12 @@ namespace
             .setType(vk::AccelerationStructureTypeKHR::eTopLevel);
         tlasAccel = device.createAccelerationStructureKHR(tlasAccelInfo);
             
-        tlasScratchBufs = createBuffer(tlasBuildSizesInfo.buildScratchSize, 
+        tlasScratchBuf = createBuffer(tlasBuildSizesInfo.buildScratchSize, 
                                                 vk::BufferUsageFlagBits::eStorageBuffer 
                                             | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                                 vk::MemoryPropertyFlagBits::eDeviceLocal);
                 
-        tlasBuildGeometryInfo.setScratchData({tlasScratchBufs.deviceAddress});
+        tlasBuildGeometryInfo.setScratchData({tlasScratchBuf.deviceAddress});
         tlasBuildGeometryInfo.setDstAccelerationStructure(tlasAccel);
                 
         // idem que pour la commande de construction du BLAS
@@ -1280,13 +1270,52 @@ namespace
         tlasDescInfo.setAccelerationStructures(tlasAccel);
     }
 
+    void createShaderStorageBufferObject()
+    {
+        // TODO : move this in world.cpp or editor.cpp or something
+        edits.push_back({ .pos = math::vec4(0., 1., 0., 0.), .type = 1, .scale = 1.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+
+        size_t bufSize = edits.size() * sizeof(edits[0]);
+        for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
+        {
+            auto newBuf = createBuffer(bufSize, 
+                                        vk::BufferUsageFlagBits::eStorageBuffer |
+                                        vk::BufferUsageFlagBits::eShaderDeviceAddressKHR, 
+                                        vk::MemoryPropertyFlagBits::eHostCoherent);
+
+            void* mapped = device.mapMemory(newBuf.memory, 0, bufSize);
+            memcpy(mapped, edits.data(), bufSize);
+            device.unmapMemory(newBuf.memory);
+
+            ssbos.push_back(newBuf);
+        }
+    }
+
     void createDescriptorSetLayout()
     {
-        bindings.push_back({0, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eRaygenKHR});   // Binding = 0 : TLAS
-        bindings.push_back({1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR});               // Binding = 1 : Storage image
-        // {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR},                        // Binding = 2 : Vertices
-        // {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR}                         // Binding = 3 : Indices
-        
+        bindings.push_back({0, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eRaygenKHR});     // Binding = 0 : TLAS
+        bindings.push_back({1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR});                 // Binding = 1 : Storage image
+        bindings.push_back({2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eMissKHR});                  // Binding = 2 : Edits
+
         auto layoutInfo = vk::DescriptorSetLayoutCreateInfo()
             .setBindings(bindings);
 
@@ -1297,14 +1326,14 @@ namespace
     {
         std::vector<vk::DescriptorPoolSize> poolSizes{
             {vk::DescriptorType::eAccelerationStructureKHR, NB_FRAMES_IN_FLIGHT},
-            {vk::DescriptorType::eStorageImage, NB_FRAMES_IN_FLIGHT}
-            // {vk::DescriptorType::eStorageBuffer, 0 * NB_FRAMES_IN_FLIGHT}, // en vrai il en faut ((vertexbuf + indexbuf) * nb_meshes + materialsbuf) * NB_FRAMES_IN_FLIGHT
+            {vk::DescriptorType::eStorageImage, NB_FRAMES_IN_FLIGHT},
+            {vk::DescriptorType::eStorageBuffer, 1 * NB_FRAMES_IN_FLIGHT}
         };
 
-        vk::DescriptorPoolCreateInfo poolInfo;
-        poolInfo.setPoolSizes(poolSizes);
-        poolInfo.setMaxSets(NB_FRAMES_IN_FLIGHT);
-        poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
+        auto poolInfo = vk::DescriptorPoolCreateInfo()
+            .setPoolSizes(poolSizes)
+            .setMaxSets(NB_FRAMES_IN_FLIGHT)
+            .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
         
         descriptorPool = device.createDescriptorPool(poolInfo);
     }
@@ -1349,8 +1378,8 @@ namespace
 
         {
             auto rmissTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
-                                                    | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-                                        vk::MemoryPropertyFlagBits::eDeviceLocal);
+                                                 | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                            vk::MemoryPropertyFlagBits::eDeviceLocal);
             
             void* mapped = device.mapMemory(rmissTable.memory, 0, stride);
             memcpy(mapped, handleStorage.data() + 1 * handleSize, handleSize);
@@ -1360,13 +1389,12 @@ namespace
         }
         
         {
-            auto rhitTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
-                                                        | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            auto rhitTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+                                                | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                           vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            uint8_t* mappedSph = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
-            memcpy(mappedSph, handleStorage.data() + 2 * handleSize, handleSize);
-            memcpy(mappedSph + stride, handleStorage.data() + 3 * handleSize, handleSize);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, stride);
+            memcpy(mapped, handleStorage.data() + 2 * handleSize, handleSize);
             device.unmapMemory(rhitTable.memory);
 
             bindingTableBufs.push_back(rhitTable);
@@ -1374,7 +1402,7 @@ namespace
 
         sbtRegions.push_back({bindingTableBufs[0].deviceAddress, stride, handleSize});
         sbtRegions.push_back({bindingTableBufs[1].deviceAddress, stride, handleSize});
-        sbtRegions.push_back({bindingTableBufs[2].deviceAddress, stride, 2 * handleSize});
+        sbtRegions.push_back({bindingTableBufs[2].deviceAddress, stride, handleSize});
 
         std::vector<vk::DescriptorSetLayout> layouts(NB_FRAMES_IN_FLIGHT, descriptorSetLayout);
         auto descSetInfo = vk::DescriptorSetAllocateInfo()
@@ -1392,15 +1420,17 @@ namespace
                 writes[i].setDescriptorCount(bindings[i].descriptorCount);
                 writes[i].setDstBinding(bindings[i].binding);
             }
+
             writes[0].setPNext(tlasDescInfo);
             writes[1].setImageInfo(rtDescImageInfos[frame]);
+            writes[2].setBufferInfo(vk::DescriptorBufferInfo().setBuffer(ssbos[frame].buf).setOffset(0).setRange(edits.size() * sizeof(edits[0])));
+
             device.updateDescriptorSets(writes, nullptr);
         }
     }
 
     void initVulkan()
     {
-        
         PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
         std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties(nullptr);
@@ -1437,6 +1467,9 @@ namespace
 
         // Arbre qui contiendra tous nos objets (TLAS), + pour chaque objet un arbre qui stocke ses primitives (BLAS)
         createAccelerationStructures();
+
+        // Gros uniform globalement, contiendra l'ensemble des objets de la scène dans la VRAM
+        createShaderStorageBufferObject();
         
         // Équivalent de commandPool mais pour uniform buffer
         createDescriptorPool();
@@ -1463,6 +1496,7 @@ void sk::end()
 
     for(int f = 0; f < NB_FRAMES_IN_FLIGHT; f++)
     {
+        ssbos[f].destroy();
         device.destroyFence(readyForNextFrameFences[f]);
         device.destroySemaphore(imageAvailableSemaphores[f]);
         device.destroyImageView(rtImageViews[f]);
@@ -1474,8 +1508,8 @@ void sk::end()
     device.destroyAccelerationStructureKHR(blasAccel);
     device.destroyAccelerationStructureKHR(tlasAccel);
     for(auto& a : aabbBufs) a.destroy();
-    tlasInstances.destroy();
-    tlasScratchBufs.destroy();
+    tlasInstance.destroy();
+    tlasScratchBuf.destroy();
     blasScratchBuf.destroy();
     
     device.destroyPipeline(pipeline);

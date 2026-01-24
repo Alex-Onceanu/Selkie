@@ -1,0 +1,10 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+void main()
+{
+    // we can't know yet where the intersection will happen
+    // we'll know in the miss shader, once the ray has hit every aabb in its way
+    // so when this shader is triggered, go to the anyhit then miss then callable
+    reportIntersectionEXT(1e-3, 0U);
+}

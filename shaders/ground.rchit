@@ -4,12 +4,15 @@
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 
+#define MAX_MERGES 8
 struct payload_t {
     float time;
     vec3 hitColor;
     float minDist;
     float distToMinDist;
     float tHit;
+    int nbHits;
+    int hitIds[MAX_MERGES];
 };
 
 layout(location = 0) rayPayloadInEXT payload_t payload;
