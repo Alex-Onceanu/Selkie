@@ -71,8 +71,10 @@ namespace
         }
     };
 
-    struct Edit {
-        math::vec4 pos;
+    struct alignas(16) Edit {
+        math::vec3 pos;
+        int type;
+        float scale;
         // [...]
     };
 };
@@ -1272,7 +1274,9 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back({ .pos = math::vec4(2., 3., 4., 5.)});
+        edits.push_back({ .pos = math::vec3(2., 3., 4.), .type = 69, .scale = 3.f });
+        edits.push_back({ .pos = math::vec3(6., 7., 8.), .type = 691, .scale = 6.f });
+        edits.push_back({ .pos = math::vec3(10., 11., 12.), .type = 6912, .scale = 9.f });
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
