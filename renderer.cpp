@@ -71,10 +71,8 @@ namespace
         }
     };
 
-    struct alignas(32) Edit {
-        alignas(16) math::vec4 pos;
-        alignas(4) int type;
-        alignas(4) float scale;
+    struct Edit {
+        math::vec4 pos;
         // [...]
     };
 };
@@ -1273,26 +1271,8 @@ namespace
     void createShaderStorageBufferObject()
     {
         // TODO : move this in world.cpp or editor.cpp or something
-        edits.push_back({ .pos = math::vec4(0., 1., 0., 0.), .type = 1, .scale = 1.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
-        edits.push_back({ .pos = math::vec4(0., 0., 0., 0.), .type = 1, .scale = 0.f });
+        edits.clear();
+        edits.push_back({ .pos = math::vec4(2., 3., 4., 5.)});
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

@@ -17,7 +17,7 @@ layout(location = 0) rayPayloadInEXT payload_t payload;
 
 void main()
 {
-    // remember my id so that you can raymarch in the callable shader called by the miss 
     if(payload.nbHits < MAX_MERGES)
         payload.hitIds[payload.nbHits++] = gl_PrimitiveID;
+    ignoreIntersectionEXT;
 }
