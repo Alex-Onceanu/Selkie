@@ -1059,7 +1059,7 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.0f, 0.0f, -1.0f, 1.0f, 2.0f, 1.0f}, {-1000.f, -0.5f, -1000.f, 1000.f, 0.5f, 1000.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-2.0f, -0.0f, -2.0f, 2.0f, 3.0f, 2.0f}, {-1000.f, -0.5f, -1000.f, 1000.f, 0.5f, 1000.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1274,9 +1274,8 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back({ .pos = math::vec3(2., 3., 4.), .type = 69, .scale = 3.f });
-        edits.push_back({ .pos = math::vec3(6., 7., 8.), .type = 691, .scale = 6.f });
-        edits.push_back({ .pos = math::vec3(10., 11., 12.), .type = 6912, .scale = 9.f });
+        edits.push_back({ .pos = math::vec3(0., 1., 0.), .type = 0, .scale = 1.f });
+        edits.push_back({ .pos = math::vec3(0., 0., 0.), .type = 1, .scale = 0.f });
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

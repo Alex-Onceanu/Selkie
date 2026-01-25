@@ -21,7 +21,7 @@ sk::Window::Window(int __WINDOW_WIDTH, int __WINDOW_HEIGHT)
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    window = glfwCreateWindow(__WINDOW_WIDTH, __WINDOW_HEIGHT, "Hello triangle !", nullptr, nullptr);
+    window = glfwCreateWindow(__WINDOW_WIDTH, __WINDOW_HEIGHT, "Selkie window", nullptr, nullptr);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
     glfwSetWindowAspectRatio(window, __WINDOW_WIDTH, __WINDOW_HEIGHT);
     
