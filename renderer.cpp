@@ -808,7 +808,7 @@ namespace
         auto pipelineCreateInfo = vk::RayTracingPipelineCreateInfoKHR()
             .setStages(stages)
             .setGroups(shaderGroups)
-            .setMaxPipelineRayRecursionDepth(2)
+            .setMaxPipelineRayRecursionDepth(3)
             .setLayout(pipelineLayout);
         
         auto pipelineCreation = device.createRayTracingPipelineKHR(nullptr, nullptr, pipelineCreateInfo);
@@ -1059,7 +1059,7 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-2.0f, -0.0f, -2.0f, 2.0f, 3.0f, 2.0f}, {-1000.f, -0.5f, -1000.f, 1000.f, 0.5f, 1000.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-1.75f, -0.0f, -1.75f, 1.75f, 3.0f, 1.75f}, {-1000.f, -1.5f, -1000.f, 1000.f, 0.5f, 1000.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1295,7 +1295,7 @@ namespace
 
     void createDescriptorSetLayout()
     {
-        bindings.push_back({0, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eRaygenKHR});     // Binding = 0 : TLAS
+        bindings.push_back({0, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eMissKHR});     // Binding = 0 : TLAS
         bindings.push_back({1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR});                 // Binding = 1 : Storage image
         bindings.push_back({2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eMissKHR});                  // Binding = 2 : Edits
 

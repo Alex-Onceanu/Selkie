@@ -4,13 +4,13 @@
 
 #define MAX_MERGES 8
 struct payload_t {
-    float time;
     vec3 hitColor;
-    float minDist;
-    float distToMinDist;
-    float tHit;
+    float time;
     int nbHits;
     int hitIds[MAX_MERGES];
+    bool shadowRay;
+    float softShadow;
+    bool mirrorRay;
 };
 
 layout(location = 0) rayPayloadInEXT payload_t payload;

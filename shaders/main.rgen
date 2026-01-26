@@ -6,13 +6,13 @@ layout(set = 0, binding = 1, rgba8) uniform image2D image;
 
 #define MAX_MERGES 8
 struct payload_t {
-    float time;
     vec3 hitColor;
-    float minDist;
-    float distToMinDist;
-    float tHit;
+    float time;
     int nbHits;
     int hitIds[MAX_MERGES];
+    bool shadowRay;
+    float softShadow;
+    bool mirrorRay;
 };
 
 layout(location = 0) rayPayloadEXT payload_t payload;
@@ -41,9 +41,10 @@ void main()
     vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * fov));
     cameraPos.xz *= rot2D(0.1 * payload.time);
     rayDir.xz *= rot2D(0.1 * payload.time);
-    payload.tHit = 1. / 0.;
-    payload.minDist = 1. / 0.;
     payload.nbHits = 0;
+    payload.shadowRay = false;
+    payload.softShadow = 1.;
+    payload.mirrorRay = false;
     traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 1, 0, cameraPos, 1e-4, rayDir, 1. / 0., 0);
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.hitColor, 0.0));
