@@ -41,10 +41,12 @@ void main()
     vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * fov));
     cameraPos.xz *= rot2D(0.1 * payload.time);
     rayDir.xz *= rot2D(0.1 * payload.time);
+    
     payload.nbHits = 0;
     payload.shadowRay = false;
     payload.softShadow = 1.;
     payload.mirrorRay = false;
+
     traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 1, 0, cameraPos, 1e-4, rayDir, 1. / 0., 0);
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.hitColor, 0.0));
