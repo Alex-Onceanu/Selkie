@@ -225,10 +225,10 @@ namespace
 #endif
             
         auto createInfo = vk::InstanceCreateInfo()
-            .setPEnabledLayerNames(layers)
             .setPEnabledExtensionNames(requiredExtensions)
             .setPApplicationInfo(&appInfo)
 #ifndef NDEBUG
+            .setPEnabledLayerNames(layers)
             .setPNext(&validationFeatures);
 #else
             ;
@@ -744,7 +744,8 @@ namespace
             "nothing.rint",
             "remember.rahit",
             "shadow.rmiss",
-            "shadow.rahit"
+            "shadow.rahit",
+            "reflection.rmiss"
         };
 
         vk::ShaderStageFlagBits stageTypes[] = { 
@@ -753,7 +754,8 @@ namespace
             vk::ShaderStageFlagBits::eIntersectionKHR,
             vk::ShaderStageFlagBits::eAnyHitKHR,
             vk::ShaderStageFlagBits::eMissKHR,
-            vk::ShaderStageFlagBits::eAnyHitKHR
+            vk::ShaderStageFlagBits::eAnyHitKHR,
+            vk::ShaderStageFlagBits::eMissKHR
         };
 
         std::vector<vk::PipelineShaderStageCreateInfo> stages;
@@ -792,6 +794,14 @@ namespace
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
             .setGeneralShader(4)
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setIntersectionShader(vk::ShaderUnusedKHR));
+        
+        // reflection miss group : pour le rayon réflechi on a un shader différent (bien que presque identique à main.rmiss)
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+            .setGeneralShader(6)
             .setClosestHitShader(vk::ShaderUnusedKHR)
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
@@ -1379,13 +1389,14 @@ namespace
         }
 
         {
-            auto rmissTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+            auto rmissTable = createBuffer(3 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
                                                      | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                             vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            uint8_t* mapped = (uint8_t*)device.mapMemory(rmissTable.memory, 0, 2 * stride);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rmissTable.memory, 0, 3 * stride);
             memcpy(mapped, handleStorage.data() + 1 * handleSize, handleSize);
             memcpy(mapped + stride, handleStorage.data() + 2 * handleSize, handleSize);
+            memcpy(mapped + 2 * stride, handleStorage.data() + 3 * handleSize, handleSize);
             device.unmapMemory(rmissTable.memory);
 
             bindingTableBufs.push_back(rmissTable);
@@ -1396,9 +1407,9 @@ namespace
                                                         | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                           vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            uint8_t* mappedSph = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
-            memcpy(mappedSph, handleStorage.data() + 3 * handleSize, handleSize);
-            memcpy(mappedSph + stride, handleStorage.data() + 4 * handleSize, handleSize);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
+            memcpy(mapped, handleStorage.data() + 4 * handleSize, handleSize);
+            memcpy(mapped + stride, handleStorage.data() + 5 * handleSize, handleSize);
             device.unmapMemory(rhitTable.memory);
 
             bindingTableBufs.push_back(rhitTable);
