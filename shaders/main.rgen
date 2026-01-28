@@ -4,27 +4,20 @@
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 layout(set = 0, binding = 1, rgba8) uniform image2D image;
 
-#define MAX_MERGES 8
-struct payload_t {
-    vec3 hitColor;
-    float time;
-    int nbHits;
-    int hitIds[MAX_MERGES];
-    bool shadowRay;
-    float softShadow;
-    bool mirrorRay;
-};
+#include "main_payload.glsl"
 
 layout(location = 0) rayPayloadEXT payload_t payload;
 
 layout(push_constant) uniform PushConstants {
-    float mtime;
+    float time;
 };
 
-mat2 rot2D(float theta)
+mat2 rot2D(const float theta)
 {
     return mat2(vec2(cos(theta), -sin(theta)), vec2(sin(theta), cos(theta)));
 }
+
+#define FOV (70. * 3.1416 / 180.)
 
 void main()
 {
@@ -33,21 +26,14 @@ void main()
     uv.x *= 1366. / 768.; // aspect ratio
     uv.y = - uv.y;        // x goes right, y goes up, z towards me
 
-    payload.time = mtime;
-
-    float fov = 70.;
-    fov *= 3.1416 / 180.;
     vec3 cameraPos = vec3(0., 1.2, 6.);
-    vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * fov));
-    cameraPos.xz *= rot2D(0.1 * payload.time);
-    rayDir.xz *= rot2D(0.1 * payload.time);
+    vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * FOV));
+    cameraPos.xz *= rot2D(0.1 * time);
+    rayDir.xz *= rot2D(0.1 * time);
     
     payload.nbHits = 0;
-    payload.shadowRay = false;
-    payload.softShadow = 1.;
-    payload.mirrorRay = false;
 
-    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 1, 0, cameraPos, 1e-4, rayDir, 1. / 0., 0);
+    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0, cameraPos, 1e-4, rayDir, 1. / 0., 0);
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.hitColor, 0.0));
 }

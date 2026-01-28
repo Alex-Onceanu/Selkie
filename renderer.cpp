@@ -742,13 +742,17 @@ namespace
             "main.rgen", 
             "main.rmiss", 
             "nothing.rint",
-            "remember.rahit"
+            "remember.rahit",
+            "shadow.rmiss",
+            "shadow.rahit"
         };
 
         vk::ShaderStageFlagBits stageTypes[] = { 
             vk::ShaderStageFlagBits::eRaygenKHR,
             vk::ShaderStageFlagBits::eMissKHR,
             vk::ShaderStageFlagBits::eIntersectionKHR,
+            vk::ShaderStageFlagBits::eAnyHitKHR,
+            vk::ShaderStageFlagBits::eMissKHR,
             vk::ShaderStageFlagBits::eAnyHitKHR
         };
 
@@ -784,8 +788,16 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
 
+        // shadow rmiss group
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+            .setGeneralShader(4)
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setIntersectionShader(vk::ShaderUnusedKHR));
+
         // hit group : même groupe pour tous les objets parce qu'on fait quasi rien dans anyhit et intersection
-        // la différence dans les calculs sera dans les callable shaders, appelés depuis un même rmiss
+        // la différence dans les calculs sera dans les rmiss
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
@@ -793,10 +805,18 @@ namespace
             .setAnyHitShader(3)
             .setIntersectionShader(2));
 
+        // shadow hit group : le any hit de shadow utilise un payload différent donc il faut un group à part
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
+            .setGeneralShader(vk::ShaderUnusedKHR)
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(5)
+            .setIntersectionShader(2));
+
         vk::PushConstantRange pushRange;
         pushRange.setOffset(0);
         pushRange.setSize(sizeof(float));
-        pushRange.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR);
+        pushRange.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eMissKHR);
 
         // Ici on envoie aux shaders des valeurs pour les "uniform" (push constants et descriptor sets)
         auto plCreateInfo = vk::PipelineLayoutCreateInfo()
@@ -1059,7 +1079,7 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-2.f, -0.0f, -2.f, 2.f, 3.0f, 2.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-2.f, -2.0f, -2.f, 2.f, 3.0f, 2.f}}};
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1359,24 +1379,26 @@ namespace
         }
 
         {
-            auto rmissTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
-                                                 | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            auto rmissTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+                                                     | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                             vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            void* mapped = device.mapMemory(rmissTable.memory, 0, stride);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rmissTable.memory, 0, 2 * stride);
             memcpy(mapped, handleStorage.data() + 1 * handleSize, handleSize);
+            memcpy(mapped + stride, handleStorage.data() + 2 * handleSize, handleSize);
             device.unmapMemory(rmissTable.memory);
 
             bindingTableBufs.push_back(rmissTable);
         }
-        
+
         {
-            auto rhitTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
-                                                | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            auto rhitTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+                                                        | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                           vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, stride);
-            memcpy(mapped, handleStorage.data() + 2 * handleSize, handleSize);
+            uint8_t* mappedSph = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
+            memcpy(mappedSph, handleStorage.data() + 3 * handleSize, handleSize);
+            memcpy(mappedSph + stride, handleStorage.data() + 4 * handleSize, handleSize);
             device.unmapMemory(rhitTable.memory);
 
             bindingTableBufs.push_back(rhitTable);
