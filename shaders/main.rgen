@@ -33,7 +33,7 @@ void main()
     
     payload.nbHits = 0;
 
-    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0, cameraPos, 1e-4, rayDir, 1. / 0., 0);
+    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0, cameraPos, T_MIN, rayDir, T_MAX, 0);
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.hitColor, 0.0));
 }

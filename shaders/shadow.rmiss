@@ -20,7 +20,7 @@ void main()
     const vec3 rd = normalize(gl_WorldRayDirectionEXT);
 
     float t = 0.1; p += t * rd;  // do not change this !
-    for(int i = 0; i < MAX_IT; i++)
+    for(int i = 0; i < SHADOW_MAX_IT; i++)
     {
         float safeDist = map(p);
 
@@ -29,6 +29,6 @@ void main()
         p += rd * safeDist;
         t += safeDist;
 
-        if(t > gl_RayTmaxEXT || safeDist <= gl_RayTminEXT) return;
+        if(t > gl_RayTmaxEXT || safeDist <= gl_RayTminEXT) break;
     }
 }

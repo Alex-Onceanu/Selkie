@@ -1304,7 +1304,7 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back({ .pos = math::vec3(0., 2., 0.), .type = 0, .scale = 1.f });
+        edits.push_back({ .pos = math::vec3(0., 1.0, 0.), .type = 0, .scale = 1.f });
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

@@ -19,5 +19,5 @@ vec3 mirrorRay(const vec3 ro, const vec3 rd)
 
 void main()
 {
-    raymarch();
+    raymarch(REFLECT_MAX_IT);
 }

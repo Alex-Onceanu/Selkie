@@ -53,7 +53,7 @@ float shadowRay(const vec3 ro, const vec3 rd)
 {
     shadowPayload.nbHits = 0;
     shadowPayload.softShadow = 1.;
-    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 1, 0, 1, ro + 0.1 * rd, 1e-5, rd, 1. / 0., 1);
+    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 1, 0, 1, ro + 0.1 * rd, T_MIN, rd, T_MAX, 1);
 
     return clamp(shadowPayload.softShadow, 0.4, 1.);
 }
@@ -119,7 +119,7 @@ vec3 sceneColor(in vec3 p, const vec3 rd, const float t, const vec3 lightPos, co
 
 // ___________________________________________________________________Main_________________________________________________________________________
 
-void raymarch()
+void raymarch(const int NB_IT)
 {
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
@@ -134,7 +134,7 @@ void raymarch()
     }
 
     float t = 0.1; p += t * rd;  // do not change this !
-    for(int i = 0; i < MAX_IT; i++)
+    for(int i = 0; i < NB_IT; i++)
     {
         float safeDist = map(p);
 
