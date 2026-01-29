@@ -29,6 +29,6 @@ void main()
         p += rd * safeDist;
         t += safeDist;
 
-        if(t > gl_RayTmaxEXT || safeDist <= gl_RayTminEXT) break;
+        if(t > gl_RayTmaxEXT || abs(safeDist) <= gl_RayTminEXT) break;
     }
 }

@@ -23,16 +23,41 @@ shadewho_t computeShadeWho(const vec3 p)
     for(int e = 0; e < payload.nbHits; e++)
     {
         acc = smin(acc.x, whichSdf(p, e));
-        if(acc.x > gl_RayTminEXT) continue;
+        if(acc.x > gl_RayTminEXT)
+        {
+            // debugPrintfEXT("p = %f %f %f, acc = %f %f, e = %d, tmin = %f, nbhits = %d, ans.nb = %d", p.x, p.y, p.z, acc.x, acc.y, e, gl_RayTminEXT, payload.nbHits, ans.nb);
+            continue;
+        }
+        float mixCoef = clamp(acc.y, 0., 1.);
 
         ans.ids[ans.nb] = e;
-        ans.ponderation[ans.nb] = acc.y;
+        ans.ponderation[ans.nb] = mixCoef;
+        // if(ans.nb == 1)
+        //     debugPrintfEXT("accoubeh.y = %f", ans.ponderation[ans.nb]);
         for(int j = 0; j < ans.nb; j++)
         {
-            ans.ponderation[j] *= (1. - acc.y);
+            ans.ponderation[j] *= (1. - mixCoef);
         }
         ans.nb++;
     }
+    // if(payload.nbHits != 3)
+    // {
+    //     for(int i = 0; i < payload.nbHits; i++)
+    //     {
+    //         ans.ponderation[i] = 0.;
+    //     }
+    // }
+    // ans.nb = payload.nbHits;
+    // if(payload.nbHits == 3)
+    // {
+    //     for(int j = 0; j < 3; j++)
+    //     {
+    //         ans.ponderation[j] = 0.33;
+    //     }
+    // }
+    
+    // if(payload.nbHits > 1)
+    // debugPrintfEXT("nb hits = %d, ans.nb = %d", payload.nbHits, ans.nb);
 
     return ans;
 }
@@ -111,16 +136,21 @@ vec3 sceneColor(in vec3 p, const vec3 rd, const float t, const vec3 lightPos, co
     }
 
     // debugPrintfEXT("0 : pos = %f %f %f | type = %d | scale = %f | clr = %f %f %f | roughness = %f\n1 : pos = %f %f %f | type = %d | scale = %f | clr = %f %f %f | roughness = %f", ssbo.edits[0].pos.x, ssbo.edits[0].pos.y, ssbo.edits[0].pos.z, ssbo.edits[0].type, ssbo.edits[0].scale, ssbo.edits[0].clr.x, ssbo.edits[0].clr.y, ssbo.edits[0].clr.z, ssbo.edits[0].roughness, ssbo.edits[1].pos.x, ssbo.edits[1].pos.y, ssbo.edits[1].pos.z, ssbo.edits[1].type, ssbo.edits[1].scale, ssbo.edits[1].clr.x, ssbo.edits[1].clr.y, ssbo.edits[1].clr.z, ssbo.edits[1].roughness);
+    // if()
+    // debugPrintfEXT()
+    int nn = whom.nb;
+    // if(nn == 2)
+    //     debugPrintfEXT("p.y = %f, ponderation[0] = %f, ponderation[1] = %f", p.y, whom.ponderation[0], whom.ponderation[1]);
 
     vec3 clr = vec3(0., 0., 0.);
+
+    for(int i = 0; i < nn; i++)
     {
-        int nn = whom.nb;
-        for(int i = 0; i < nn; i++)
-        {
-            float ff = whom.ponderation[i]; // same with this variable here
-            clr += sphereColor(p, rd, payload.hitIds[whom.ids[i]], lightPos) * ff;
-        }
+        float ff = whom.ponderation[i]; // same with this variable here
+        clr += ssbo.edits[payload.hitIds[whom.ids[i]]].clr * ff;
+        // clr += sphereColor(p, rd, payload.hitIds[whom.ids[i]], lightPos) * ff;
     }
+
     return clr;
 }
 
@@ -154,10 +184,9 @@ void raymarch(const int NB_IT)
             return;
         }
 
-        if(safeDist <= gl_RayTminEXT)
+        if(abs(safeDist) <= gl_RayTminEXT)
         {
-            const shadewho_t sw = computeShadeWho(p);
-            payload.hitColor = sceneColor(p, rd, t, lp, sw);
+            payload.hitColor = sceneColor(p, rd, t, lp, computeShadeWho(p));
             return;
         }
     }

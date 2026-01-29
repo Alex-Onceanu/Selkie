@@ -1114,7 +1114,7 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-2.f, 0.f, -2.f, 2.f, 3.f, 2.f}, {-2.f, 1.f, -2.f, 2.f, 4.0f, 2.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-4.f, 0.f, -2.f, 1.f, 3.f, 2.f}, {-1.f, 0.f, -2.f, 4.f, 3.f, 2.f}, {-2.f, 1.f, -2.f, 2.f, 4.0f, 2.f}}};
         // , {-2.f, 1.f, -2.f, 2.f, 5.0f, 2.f}
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
@@ -1221,7 +1221,7 @@ namespace
         // on record la construction du blas
         blasCommandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
         auto buildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
-            .setPrimitiveCount(2)
+            .setPrimitiveCount(aabbs[0].size())
             .setFirstVertex(0)
             .setPrimitiveOffset(0)
             .setTransformOffset(0);
@@ -1330,8 +1330,9 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(0., 1.0, 0.)).setType(0).setScale(1.0).setClr(math::vec3(1., 0., 0.)).setRoughness(0.9));
-        edits.push_back(Edit().setPos(math::vec3(0., 3.0, 0.4)).setType(0).setScale(0.91).setClr(math::vec3(0., 0., 1.)).setRoughness(0.2));
+        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(1.));
+        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(1.));
+        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(1.));
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
