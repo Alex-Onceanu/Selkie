@@ -4,7 +4,10 @@
 struct edit_t {
     vec3 pos;
     int type;
+    vec3 clr;
+    float roughness;
     float scale;
+    float padding[7];
 };
 
 layout(set = 0, binding = 2, std430) buffer ssbo_t {

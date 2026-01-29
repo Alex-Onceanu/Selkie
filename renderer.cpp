@@ -71,12 +71,37 @@ namespace
         }
     };
 
-    struct alignas(16) Edit {
+    struct alignas(64) Edit {
         math::vec3 pos;
         int type;
+        math::vec3 clr;
+        float roughness;
         float scale;
+        char padding[28]; // struct needs to be aligned to a multiple of 16 in GPU memory
         // [...]
+
+        Edit() = default;
+        Edit& setPos(        const math::vec3 pos_)      { pos = pos_; return *this; }
+        Edit& setClr(        const math::vec3 clr_)      { clr = clr_; return *this; }
+        Edit& setType(       const int type_)            { type = type_; return *this; }
+        Edit& setRoughness(  const float roughness_)     { roughness = roughness_; return *this; }
+        Edit& setScale(      const float scale_)         { scale = scale_; return *this; }
     };
+
+    // class EditBuilder
+    // {
+    // public:
+    //     EditBuilder() = default;
+    //     Edit build() { return e; }
+
+    //     EditBuilder& setPos(        const math::vec3 pos_)      { e.pos = pos_; return *this; }
+    //     EditBuilder& setClr(        const math::vec3 clr_)      { e.clr = clr_; return *this; }
+    //     EditBuilder& setType(       const int type_)            { e.type = type_; return *this; }
+    //     EditBuilder& setRoughness(  const float roughness_)     { e.roughness = roughness_; return *this; }
+    //     EditBuilder& setScale(      const float scale_)         { e.scale = scale_; return *this; }
+    // private:
+    //     Edit e{};
+    // };
 };
 
 // attributs
@@ -1089,7 +1114,8 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-2.f, -2.0f, -2.f, 2.f, 3.0f, 2.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-2.f, 0.f, -2.f, 2.f, 3.f, 2.f}, {-2.f, 1.f, -2.f, 2.f, 4.0f, 2.f}}};
+        // , {-2.f, 1.f, -2.f, 2.f, 5.0f, 2.f}
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1304,7 +1330,8 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back({ .pos = math::vec3(0., 1.0, 0.), .type = 0, .scale = 1.f });
+        edits.push_back(Edit().setPos(math::vec3(0., 1.0, 0.)).setType(0).setScale(1.0).setClr(math::vec3(1., 0., 0.)).setRoughness(0.9));
+        edits.push_back(Edit().setPos(math::vec3(0., 3.0, 0.4)).setType(0).setScale(0.91).setClr(math::vec3(0., 0., 1.)).setRoughness(0.2));
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

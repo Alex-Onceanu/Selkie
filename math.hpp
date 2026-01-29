@@ -16,6 +16,7 @@ namespace math
         float x, y, z;
 
         vec3(float __x, float __y, float __z) { x = __x; y = __y; z = __z; };
+        vec3() = default;
     };
 
     struct vec4

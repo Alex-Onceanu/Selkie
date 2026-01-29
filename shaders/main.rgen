@@ -26,7 +26,7 @@ void main()
     uv.x *= 1366. / 768.; // aspect ratio
     uv.y = - uv.y;        // x goes right, y goes up, z towards me
 
-    vec3 cameraPos = vec3(0., 1.2, 6.);
+    vec3 cameraPos = vec3(0., 1.2, 9.);
     vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * FOV));
     cameraPos.xz *= rot2D(0.1 * time);
     rayDir.xz *= rot2D(0.1 * time);
