@@ -24,11 +24,11 @@ void main()
     {
         float safeDist = map(p);
 
-        payload.softShadow = min(payload.softShadow, SOFTNESS * abs(safeDist) / t);
+        payload.softShadow = min(payload.softShadow, SOFTNESS * safeDist / t);
 
         p += rd * safeDist;
         t += safeDist;
 
-        if(t > gl_RayTmaxEXT || abs(safeDist) <= gl_RayTminEXT) return;
+        if(t > gl_RayTmaxEXT || safeDist <= T_MIN) return;
     }
 }

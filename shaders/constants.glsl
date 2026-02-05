@@ -1,6 +1,7 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
+#define FOV (70. * 3.1416 / 180.)
 #define MAX_MERGES 8
 #define MAX_IT 256
 #define SHADOW_MAX_IT 100

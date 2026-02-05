@@ -1118,7 +1118,7 @@ namespace
         for(const auto& e : edits)
         {
             math::vec3 p = e.pos;
-            float k = 2.f; // TODO : put this smin constant in edits
+            float k = 2.5f; // TODO : put this smin constant in edits
             float s = e.scale * k;
             aabbs[0].push_back({p.x-s,p.y-s,p.z-s,p.x+s,p.y+s,p.z+s});
         }
@@ -1337,9 +1337,9 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(1.0));
-        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(1.0));
-        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(1.0));
+        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(0.0));
+        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(0.4));
+        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(0.8));
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

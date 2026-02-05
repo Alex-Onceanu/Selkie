@@ -17,8 +17,6 @@ mat2 rot2D(const float theta)
     return mat2(vec2(cos(theta), -sin(theta)), vec2(sin(theta), cos(theta)));
 }
 
-#define FOV (70. * 3.1416 / 180.)
-
 void main()
 {
     vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchSizeEXT.xy);

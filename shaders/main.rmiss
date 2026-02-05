@@ -14,7 +14,7 @@ layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 vec3 mirrorRay(const vec3 ro, const vec3 rd)
 {
     mirrorPayload.nbHits = 0;
-    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 2, ro + 0.1 * rd, T_MIN, rd, T_MAX, 2);
+    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 2, ro + 0.01 * rd, T_MIN, rd, T_MAX, 2);
     
     return mirrorPayload.hitColor;
 }

@@ -126,11 +126,10 @@ void raymarch(const int NB_IT)
         return;
     }
 
-    float t = 0.1; p += t * rd;  // do not change this !
+    float t = 0.;
     for(int i = 0; i < NB_IT; i++)
     {
         float safeDist = map(p);
-
 
         if(t > gl_RayTmaxEXT)
         {
@@ -138,7 +137,7 @@ void raymarch(const int NB_IT)
             return;
         }
 
-        if(abs(safeDist) <= gl_RayTminEXT)
+        if(safeDist <= gl_RayTminEXT)
         {
             payload.hitColor = sceneColor(p, rd, t, lp, blendMaterial(p));
             return;
