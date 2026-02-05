@@ -1114,7 +1114,14 @@ namespace
     {
         // BLAS d'abord
         // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{{-4.f, 0.f, -2.f, 1.f, 3.f, 2.f}, {-1.f, 0.f, -2.f, 4.f, 3.f, 2.f}, {-2.f, 1.f, -2.f, 2.f, 4.0f, 2.f}}};
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{}};
+        for(const auto& e : edits)
+        {
+            math::vec3 p = e.pos;
+            float k = 2.f; // TODO : put this smin constant in edits
+            float s = e.scale * k;
+            aabbs[0].push_back({p.x-s,p.y-s,p.z-s,p.x+s,p.y+s,p.z+s});
+        }
         // , {-2.f, 1.f, -2.f, 2.f, 5.0f, 2.f}
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
@@ -1330,9 +1337,9 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(1.));
-        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(1.));
-        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(1.));
+        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(0.5));
+        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(0.5));
+        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(0.5));
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
@@ -1508,11 +1515,11 @@ namespace
         // Maintenant on crée les images qui serviront d'output au raygen shader (1 par frame in flight)
         createRTOutputImages();
 
-        // Arbre qui contiendra tous nos objets (TLAS), + pour chaque objet un arbre qui stocke ses primitives (BLAS)
-        createAccelerationStructures();
-
         // Gros uniform globalement, contiendra l'ensemble des objets de la scène dans la VRAM
         createShaderStorageBufferObject();
+
+        // Arbre qui contiendra tous nos objets (TLAS), + pour chaque objet un arbre qui stocke ses primitives (BLAS)
+        createAccelerationStructures();
         
         // Équivalent de commandPool mais pour uniform buffer
         createDescriptorPool();

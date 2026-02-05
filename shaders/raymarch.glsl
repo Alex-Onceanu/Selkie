@@ -2,10 +2,11 @@
 #define RAYMARCH_H
 
 // if the ray intersects the smooth intersection between multiple objects, we need to shade them all and then interpolate
+// for now we interpolate the material, and shade only once
+// though this will have to be changed if one day we want custom materials with arbitrary shader execution
 struct shadewho_t {
-    int nb;
-    int ids[MAX_MERGES];
-    float ponderation[MAX_MERGES];
+    vec3 albedo;
+    float roughness;
 };
 
 layout(push_constant) uniform PushConstants {
@@ -16,60 +17,50 @@ layout(push_constant) uniform PushConstants {
 
 shadewho_t computeShadeWho(const vec3 p)
 {
-    shadewho_t ans;
-    ans.nb = 0;
+    float ponderation[MAX_MERGES];
 
-    vec2 acc = vec2(1. / 0., 0.5);
+    {
+        vec2 acc = vec2(1. / 0., 0.);
+        for(int e = 0; e < payload.nbHits; e++)
+        {
+            acc = smin(acc.x, whichSdf(p, e));
+            float mixCoef = clamp(acc.y, 0., 1.);
+
+            ponderation[e] = mixCoef;
+
+            for(int j = 0; j < e; j++)
+            {
+                ponderation[j] *= (1. - mixCoef);
+            }
+        }
+    }
+
+    vec3 albedo = vec3(0.);
+    float roughness = 0.;
+
     for(int e = 0; e < payload.nbHits; e++)
     {
-        acc = smin(acc.x, whichSdf(p, e));
-        if(acc.x > gl_RayTminEXT)
-        {
-            // debugPrintfEXT("p = %f %f %f, acc = %f %f, e = %d, tmin = %f, nbhits = %d, ans.nb = %d", p.x, p.y, p.z, acc.x, acc.y, e, gl_RayTminEXT, payload.nbHits, ans.nb);
-            continue;
-        }
-        float mixCoef = clamp(acc.y, 0., 1.);
-
-        ans.ids[ans.nb] = e;
-        ans.ponderation[ans.nb] = mixCoef;
-        // if(ans.nb == 1)
-        //     debugPrintfEXT("accoubeh.y = %f", ans.ponderation[ans.nb]);
-        for(int j = 0; j < ans.nb; j++)
-        {
-            ans.ponderation[j] *= (1. - mixCoef);
-        }
-        ans.nb++;
+        albedo += ssbo.edits[payload.hitIds[e]].clr * ponderation[e];
+        roughness += ssbo.edits[payload.hitIds[e]].roughness * ponderation[e];
     }
-    // if(payload.nbHits != 3)
-    // {
-    //     for(int i = 0; i < payload.nbHits; i++)
-    //     {
-    //         ans.ponderation[i] = 0.;
-    //     }
-    // }
-    // ans.nb = payload.nbHits;
-    // if(payload.nbHits == 3)
-    // {
-    //     for(int j = 0; j < 3; j++)
-    //     {
-    //         ans.ponderation[j] = 0.33;
-    //     }
-    // }
     
-    // if(payload.nbHits > 1)
-    // debugPrintfEXT("nb hits = %d, ans.nb = %d", payload.nbHits, ans.nb);
+    shadewho_t ans;
+    ans.albedo = albedo;
+    ans.roughness = roughness;
+    
+    if(payload.nbHits > 3) ans.albedo = vec3(1.,1.,1.);
 
     return ans;
 }
 
-// SDF central differences based on "mapNoShade" function
+// central differences
 vec3 computeNormal(const vec3 p)
 {
     const float eps = 1e-4;
     const vec2 h = vec2(eps,0);
-    return normalize( vec3(map(p+h.xyy).x - map(p-h.xyy).x,
-                           map(p+h.yxy).x - map(p-h.yxy).x,
-                           map(p+h.yyx).x - map(p-h.yyx).x ) );
+    return normalize( vec3(map(p+h.xyy) - map(p-h.xyy),
+                           map(p+h.yxy) - map(p-h.yxy),
+                           map(p+h.yyx) - map(p-h.yyx) ) );
 }
 
 // ___________________________________________________________________Recursion_________________________________________________________________________
@@ -78,7 +69,7 @@ float shadowRay(const vec3 ro, const vec3 rd)
 {
     shadowPayload.nbHits = 0;
     shadowPayload.softShadow = 1.;
-    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 1, 0, 1, ro + 0.1 * rd, T_MIN, rd, T_MAX, 1);
+    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 1, 0, 1, ro, T_MIN, rd, T_MAX, 1);
 
     return clamp(shadowPayload.softShadow, AMBIENT_INTENSITY, 1.);
 }
@@ -111,10 +102,8 @@ vec3 backgroundColor(in vec3 p, const vec3 rd, const vec3 lightPos)
         return skyColor(rd);
 }
 
-vec3 sphereColor(const vec3 p, const vec3 rd, const int which, const vec3 lightPos)
+vec3 sphereColor(const vec3 p, const vec3 rd, const vec3 albedo, const float roughness, const vec3 lightPos)
 {
-    const vec3 albedo = ssbo.edits[which].clr;
-    const float roughness = ssbo.edits[which].roughness;
     const vec3 toLight = normalize(lightPos - p);
     const vec3 normal = computeNormal(p);
     const float diffuse = max(AMBIENT_INTENSITY, dot(normal, toLight));
@@ -135,23 +124,7 @@ vec3 sceneColor(in vec3 p, const vec3 rd, const float t, const vec3 lightPos, co
             return groundColor(pp, rd, lightPos);
     }
 
-    // debugPrintfEXT("0 : pos = %f %f %f | type = %d | scale = %f | clr = %f %f %f | roughness = %f\n1 : pos = %f %f %f | type = %d | scale = %f | clr = %f %f %f | roughness = %f", ssbo.edits[0].pos.x, ssbo.edits[0].pos.y, ssbo.edits[0].pos.z, ssbo.edits[0].type, ssbo.edits[0].scale, ssbo.edits[0].clr.x, ssbo.edits[0].clr.y, ssbo.edits[0].clr.z, ssbo.edits[0].roughness, ssbo.edits[1].pos.x, ssbo.edits[1].pos.y, ssbo.edits[1].pos.z, ssbo.edits[1].type, ssbo.edits[1].scale, ssbo.edits[1].clr.x, ssbo.edits[1].clr.y, ssbo.edits[1].clr.z, ssbo.edits[1].roughness);
-    // if()
-    // debugPrintfEXT()
-    int nn = whom.nb;
-    // if(nn == 2)
-    //     debugPrintfEXT("p.y = %f, ponderation[0] = %f, ponderation[1] = %f", p.y, whom.ponderation[0], whom.ponderation[1]);
-
-    vec3 clr = vec3(0., 0., 0.);
-
-    for(int i = 0; i < nn; i++)
-    {
-        float ff = whom.ponderation[i]; // same with this variable here
-        clr += ssbo.edits[payload.hitIds[whom.ids[i]]].clr * ff;
-        // clr += sphereColor(p, rd, payload.hitIds[whom.ids[i]], lightPos) * ff;
-    }
-
-    return clr;
+    return sphereColor(p, rd, whom.albedo, whom.roughness, lightPos);
 }
 
 // ___________________________________________________________________Main_________________________________________________________________________

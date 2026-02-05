@@ -33,6 +33,7 @@ vec2 smin(const float a, const float b)
     return ((a<b) ? vec2(a-s,m) : vec2(b-s,1.0-m));
 }
 
+
 // returns a negative value if there is no intersection
 float rayPlane(const vec3 ro, const vec3 rd)
 {
@@ -76,7 +77,7 @@ float whichSdf(const vec3 p, const int which)
 // returns distance to the closest object in the scene
 float map(const vec3 p)
 {
-    vec2 ans = vec2(1. / 0., 0.5);
+    vec2 ans = vec2(1. / 0., 0.0);
 
     for(int e = 0; e < payload.nbHits; e++)
     {
