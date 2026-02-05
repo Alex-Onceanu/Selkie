@@ -1337,9 +1337,9 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(0.5));
-        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(0.5));
-        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(0.5));
+        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(1.0));
+        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(1.0));
+        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(1.0));
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

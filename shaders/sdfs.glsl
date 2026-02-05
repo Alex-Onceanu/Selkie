@@ -1,6 +1,7 @@
 #ifndef SDFS_H
 #define SDFS_H
 
+// TODO : material_t here instead of clr and roughness
 struct edit_t {
     vec3 pos;
     int type;
@@ -20,19 +21,6 @@ mat2 rot2D(const float theta)
 {
     return mat2(vec2(cos(theta), -sin(theta)), vec2(sin(theta), cos(theta)));
 }
-
-// quadratic polynomial smooth minimum
-vec2 smin(const float a, const float b)
-{
-    const float k = 0.25; // TODO : move this in cpu
-
-    const float h = 1.0 - min( abs(a-b)/(4.0*k), 1.0 );
-    const float w = h*h;
-    const float m = w*0.5;
-    const float s = w*k;
-    return ((a<b) ? vec2(a-s,m) : vec2(b-s,1.0-m));
-}
-
 
 // returns a negative value if there is no intersection
 float rayPlane(const vec3 ro, const vec3 rd)
@@ -75,14 +63,14 @@ float whichSdf(const vec3 p, const int which)
 }
 
 // returns distance to the closest object in the scene
+// computes n-ary exponential smooth minimum 
 float map(const vec3 p)
 {
-    vec2 ans = vec2(1. / 0., 0.0);
-
+    float sum = 0.;
     for(int e = 0; e < payload.nbHits; e++)
     {
-        ans = smin(ans.x, whichSdf(p, e));
+        sum += exp2(-whichSdf(p, e) * BLEND_STRENGTH);
     }
-    return ans.x;
+    return -log2(sum) / BLEND_STRENGTH;
 }
 #endif

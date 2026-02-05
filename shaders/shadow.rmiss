@@ -24,7 +24,7 @@ void main()
     {
         float safeDist = map(p);
 
-        payload.softShadow = min(payload.softShadow, SOFTNESS * safeDist / t);
+        payload.softShadow = min(payload.softShadow, SOFTNESS * abs(safeDist) / t);
 
         p += rd * safeDist;
         t += safeDist;

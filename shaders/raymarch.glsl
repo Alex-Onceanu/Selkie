@@ -4,7 +4,7 @@
 // if the ray intersects the smooth intersection between multiple objects, we need to shade them all and then interpolate
 // for now we interpolate the material, and shade only once
 // though this will have to be changed if one day we want custom materials with arbitrary shader execution
-struct shadewho_t {
+struct material_t {
     vec3 albedo;
     float roughness;
 };
@@ -15,42 +15,25 @@ layout(push_constant) uniform PushConstants {
 
 #include "sdfs.glsl"
 
-shadewho_t computeShadeWho(const vec3 p)
+// computes partial derivative of exponential smooth minimum for each object then sums
+material_t blendMaterial(const vec3 p)
 {
-    float ponderation[MAX_MERGES];
+    material_t mat;
+    mat.albedo = vec3(0.);
+    mat.roughness = 0.;
 
-    {
-        vec2 acc = vec2(1. / 0., 0.);
-        for(int e = 0; e < payload.nbHits; e++)
-        {
-            acc = smin(acc.x, whichSdf(p, e));
-            float mixCoef = clamp(acc.y, 0., 1.);
-
-            ponderation[e] = mixCoef;
-
-            for(int j = 0; j < e; j++)
-            {
-                ponderation[j] *= (1. - mixCoef);
-            }
-        }
-    }
-
-    vec3 albedo = vec3(0.);
-    float roughness = 0.;
-
+    float sum = 0.;
     for(int e = 0; e < payload.nbHits; e++)
     {
-        albedo += ssbo.edits[payload.hitIds[e]].clr * ponderation[e];
-        roughness += ssbo.edits[payload.hitIds[e]].roughness * ponderation[e];
+        float a_e = exp2(-whichSdf(p, e) * BLEND_STRENGTH);
+        mat.albedo += ssbo.edits[payload.hitIds[e]].clr * a_e;
+        mat.roughness += ssbo.edits[payload.hitIds[e]].roughness * a_e;
+        sum += a_e;
     }
-    
-    shadewho_t ans;
-    ans.albedo = albedo;
-    ans.roughness = roughness;
-    
-    if(payload.nbHits > 3) ans.albedo = vec3(1.,1.,1.);
 
-    return ans;
+    mat.albedo /= sum;
+    mat.roughness /= sum;
+    return mat;
 }
 
 // central differences
@@ -116,7 +99,7 @@ vec3 sphereColor(const vec3 p, const vec3 rd, const vec3 albedo, const float rou
 
 // simulating a closest hit shader here, since we can't call one from rmiss
 // so computes the color at position p
-vec3 sceneColor(in vec3 p, const vec3 rd, const float t, const vec3 lightPos, const shadewho_t whom)
+vec3 sceneColor(in vec3 p, const vec3 rd, const float t, const vec3 lightPos, const material_t mat)
 {
     {
         vec3 pp = p; // wtf ? without this variable the gpu explodes
@@ -124,7 +107,7 @@ vec3 sceneColor(in vec3 p, const vec3 rd, const float t, const vec3 lightPos, co
             return groundColor(pp, rd, lightPos);
     }
 
-    return sphereColor(p, rd, whom.albedo, whom.roughness, lightPos);
+    return sphereColor(p, rd, mat.albedo, mat.roughness, lightPos);
 }
 
 // ___________________________________________________________________Main_________________________________________________________________________
@@ -148,8 +131,6 @@ void raymarch(const int NB_IT)
     {
         float safeDist = map(p);
 
-        p += rd * safeDist;
-        t += safeDist;
 
         if(t > gl_RayTmaxEXT)
         {
@@ -159,9 +140,12 @@ void raymarch(const int NB_IT)
 
         if(abs(safeDist) <= gl_RayTminEXT)
         {
-            payload.hitColor = sceneColor(p, rd, t, lp, computeShadeWho(p));
+            payload.hitColor = sceneColor(p, rd, t, lp, blendMaterial(p));
             return;
         }
+
+        p += rd * safeDist;
+        t += safeDist;
     }
     payload.hitColor = backgroundColor(p, rd, lp);
 }
