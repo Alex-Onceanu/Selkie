@@ -76,19 +76,24 @@ namespace
         float roughness;
     };
 
+    // how to match this define with the one in ssbo.glsl ?
+    // Should be a multiple of 4 for gpu memory alignment !!!
+    #define MAX_MERGES 8
     struct alignas(64) Edit {
         math::vec3 pos;
         int type;
         Material mat;
         math::vec3 scale;
-        char padding[20]; // struct needs to be aligned to a multiple of 16 in GPU memory
-        // [...]
+        int nbNeighbours = 0;
+        int neighbours[MAX_MERGES];
+        // [...] remember to align to 16 bytes !
 
         Edit() = default;
-        Edit& setPos(        const math::vec3 pos_)      { pos = pos_; return *this; }
-        Edit& setMaterial(   const Material mat_)        { mat = mat_; return *this; }
-        Edit& setType(       const int type_)            { type = type_; return *this; }
-        Edit& setScale(      const math::vec3 scale_)    { scale = scale_; return *this; }
+        Edit& setPos(       const math::vec3 pos_)      { pos = pos_; return *this; }
+        Edit& setMaterial(  const Material mat_)        { mat = mat_; return *this; }
+        Edit& setType(      const int type_)            { type = type_; return *this; }
+        Edit& setScale(     const math::vec3 scale_)    { scale = scale_; return *this; }
+        Edit& addNeighbour( const int neighbour_)       { if(nbNeighbours < MAX_MERGES) neighbours[nbNeighbours++] = neighbour_; return *this; }
     };
 
     // class EditBuilder
@@ -767,23 +772,17 @@ namespace
          */
 
         std::vector<std::string> filePaths = {
-            "main.rgen", 
-            "main.rmiss", 
-            "nothing.rint",
-            "remember.rahit",
-            "shadow.rmiss",
-            "shadow.rahit",
-            "reflection.rmiss"
+            "main.rgen",
+            "sky.rmiss",
+            "raymarch.rint",
+            "pbr.rchit"
         };
 
         vk::ShaderStageFlagBits stageTypes[] = { 
             vk::ShaderStageFlagBits::eRaygenKHR,
             vk::ShaderStageFlagBits::eMissKHR,
             vk::ShaderStageFlagBits::eIntersectionKHR,
-            vk::ShaderStageFlagBits::eAnyHitKHR,
-            vk::ShaderStageFlagBits::eMissKHR,
-            vk::ShaderStageFlagBits::eAnyHitKHR,
-            vk::ShaderStageFlagBits::eMissKHR
+            vk::ShaderStageFlagBits::eClosestHitKHR
         };
 
         std::vector<vk::PipelineShaderStageCreateInfo> stages;
@@ -818,43 +817,18 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
 
-        // shadow rmiss group
-        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
-            .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
-            .setGeneralShader(4)
-            .setClosestHitShader(vk::ShaderUnusedKHR)
-            .setAnyHitShader(vk::ShaderUnusedKHR)
-            .setIntersectionShader(vk::ShaderUnusedKHR));
-        
-        // reflection miss group : pour le rayon réflechi on a un shader différent (bien que presque identique à main.rmiss)
-        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
-            .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
-            .setGeneralShader(6)
-            .setClosestHitShader(vk::ShaderUnusedKHR)
-            .setAnyHitShader(vk::ShaderUnusedKHR)
-            .setIntersectionShader(vk::ShaderUnusedKHR));
-
-        // hit group : même groupe pour tous les objets parce qu'on fait quasi rien dans anyhit et intersection
-        // la différence dans les calculs sera dans les rmiss
+        // hit group : même groupe pour tous les objets (ray marching en rint + matériau pbr en rchit)
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
-            .setClosestHitShader(vk::ShaderUnusedKHR)
-            .setAnyHitShader(3)
-            .setIntersectionShader(2));
-
-        // shadow hit group : le any hit de shadow utilise un payload différent donc il faut un group à part
-        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
-            .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
-            .setGeneralShader(vk::ShaderUnusedKHR)
-            .setClosestHitShader(vk::ShaderUnusedKHR)
-            .setAnyHitShader(5)
+            .setClosestHitShader(3)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(2));
 
         vk::PushConstantRange pushRange;
         pushRange.setOffset(0);
         pushRange.setSize(sizeof(float));
-        pushRange.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eMissKHR);
+        pushRange.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eMissKHR | vk::ShaderStageFlagBits::eClosestHitKHR);
 
         // Ici on envoie aux shaders des valeurs pour les "uniform" (push constants et descriptor sets)
         auto plCreateInfo = vk::PipelineLayoutCreateInfo()
@@ -1112,13 +1086,10 @@ namespace
 
         device.freeCommandBuffers(commandPool, commandBuffer);
     }
-    
-    void createAccelerationStructures()
+
+    void computeBoundingBoxes(std::vector<vk::AabbPositionsKHR>& aabbs0)
     {
-        // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{}};
-        
-        const float k = 2.0f; // TODO : put this smin constant in edits
+        const float k = 1.0f; // TODO : put this smin constant in edits
         for(const auto& e : edits)
         {
             math::vec3 p = e.pos;
@@ -1128,7 +1099,8 @@ namespace
             switch(e.type)
             {
             case 0:
-                s = math::vec3(e.scale.x, e.scale.x, e.scale.x);
+                #define ff 4.2
+                s = math::vec3(ff/5.,ff/5.,ff/5.);
                 break;
             case 1:
                 s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
@@ -1146,11 +1118,17 @@ namespace
                 s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
                 break;
             }
-
-            s.x *= k; s.y *= k; s.z *= k;
-            aabbs[0].push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
+            // s.x *= k; s.y *= k; s.z *= k;
+            aabbs0.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
         }
-
+    }
+    
+    void createAccelerationStructures()
+    {
+        // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{}};
+        computeBoundingBoxes(aabbs[0]);
+        
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
         std::vector<uint32_t> primitiveCounts{};
@@ -1360,15 +1338,52 @@ namespace
         tlasDescInfo.setAccelerationStructures(tlasAccel);
     }
 
+    bool areEditsIntersecting(const Edit& a, const Edit& b)
+    {
+        // TODO : switch to sphere bounding boxes ?
+    }
+
+    void computeAllEditIntersections()
+    {
+        // naïve O(n²) approach for now
+        for(int i = 0; i < edits.size(); i++)
+        {
+            for(int j = i + 1; j < edits.size(); j++)
+            {
+                if(areEditsIntersecting(edits[i], edits[j]))
+                {
+                    edits[i].addNeighbour(j);
+                    edits[j].addNeighbour(i); // optional ?
+                }
+            }
+        }
+    }
+
     void createShaderStorageBufferObject()
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
+        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
+
+        const int s = 5;
+        const float sc = 2.;
+        for(int z = 0; z < s; z++)
+        {
+            for(int y = 0; y < s; y++)
+            {
+                for(int x = 0; x < s; x++)
+                {
+                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
+                }
+            }
+        }
+
+        // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
+        computeAllEditIntersections();
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
@@ -1428,8 +1443,6 @@ namespace
         uint32_t groupCount = static_cast<uint32_t>(shaderGroups.size());
         uint32_t sbtSize = groupCount * handleSize;
 
-        // TODO : se renseigner sur shader record (comment utiliser des matériaux (ou autres params) différents par instance ?)
-
         // globalement ici on demande l'agencement mémoire des shaders qu'on a chargés, pour les donner aux shaders (via les descriptor sets)
         // mais pk des shaders auraient besoin de connaitre l'adresse mémoire de leur code source ? Astuce de Quine ??
         // en fait c'est parce qu'ils vont pouvoir s'appeler les uns les autres récursviement (ex : chit appelle raygen pour ombres / réflections)
@@ -1453,27 +1466,24 @@ namespace
         }
 
         {
-            auto rmissTable = createBuffer(3 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+            auto rmissTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
                                                      | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                             vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            uint8_t* mapped = (uint8_t*)device.mapMemory(rmissTable.memory, 0, 3 * stride);
+            void* mapped = device.mapMemory(rmissTable.memory, 0, stride);
             memcpy(mapped, handleStorage.data() + 1 * handleSize, handleSize);
-            memcpy(mapped + stride, handleStorage.data() + 2 * handleSize, handleSize);
-            memcpy(mapped + 2 * stride, handleStorage.data() + 3 * handleSize, handleSize);
             device.unmapMemory(rmissTable.memory);
 
             bindingTableBufs.push_back(rmissTable);
         }
 
         {
-            auto rhitTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+            auto rhitTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
                                                         | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                           vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
-            memcpy(mapped, handleStorage.data() + 4 * handleSize, handleSize);
-            memcpy(mapped + stride, handleStorage.data() + 5 * handleSize, handleSize);
+            void* mapped = device.mapMemory(rhitTable.memory, 0, stride);
+            memcpy(mapped, handleStorage.data() + 2 * handleSize, handleSize);
             device.unmapMemory(rhitTable.memory);
 
             bindingTableBufs.push_back(rhitTable);
