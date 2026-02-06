@@ -71,21 +71,24 @@ namespace
         }
     };
 
+    struct Material {
+        math::vec3 albedo;
+        float roughness;
+    };
+
     struct alignas(64) Edit {
         math::vec3 pos;
         int type;
-        math::vec3 clr;
-        float roughness;
-        float scale;
-        char padding[28]; // struct needs to be aligned to a multiple of 16 in GPU memory
+        Material mat;
+        math::vec3 scale;
+        char padding[20]; // struct needs to be aligned to a multiple of 16 in GPU memory
         // [...]
 
         Edit() = default;
         Edit& setPos(        const math::vec3 pos_)      { pos = pos_; return *this; }
-        Edit& setClr(        const math::vec3 clr_)      { clr = clr_; return *this; }
+        Edit& setMaterial(   const Material mat_)        { mat = mat_; return *this; }
         Edit& setType(       const int type_)            { type = type_; return *this; }
-        Edit& setRoughness(  const float roughness_)     { roughness = roughness_; return *this; }
-        Edit& setScale(      const float scale_)         { scale = scale_; return *this; }
+        Edit& setScale(      const math::vec3 scale_)    { scale = scale_; return *this; }
     };
 
     // class EditBuilder
@@ -1112,17 +1115,41 @@ namespace
     
     void createAccelerationStructures()
     {
-        // BLAS d'abord
-        // Spheres, puis plans, etc (plusieurs types de géométries pour le même BLAS, utiliseront un hitgroup différent)
+        // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
         std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{}};
+        
+        const float k = 2.0f; // TODO : put this smin constant in edits
         for(const auto& e : edits)
         {
             math::vec3 p = e.pos;
-            float k = 2.5f; // TODO : put this smin constant in edits
-            float s = e.scale * k;
-            aabbs[0].push_back({p.x-s,p.y-s,p.z-s,p.x+s,p.y+s,p.z+s});
+            math::vec3 s;
+
+            // compute bounding box for each primitive type
+            switch(e.type)
+            {
+            case 0:
+                s = math::vec3(e.scale.x, e.scale.x, e.scale.x);
+                break;
+            case 1:
+                s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
+                break;
+            case 2:
+                s = math::vec3(e.scale.x + e.scale.y, e.scale.y, e.scale.x + e.scale.y);
+                break;
+            case 3:
+                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
+                break;
+            case 4:
+                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
+                break;
+            case 5:
+                s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
+                break;
+            }
+
+            s.x *= k; s.y *= k; s.z *= k;
+            aabbs[0].push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
         }
-        // , {-2.f, 1.f, -2.f, 2.f, 5.0f, 2.f}
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1337,9 +1364,11 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-1., 1.0, 0.)).setType(0).setScale(1.).setClr(math::vec3(1., 0., 0.)).setRoughness(0.0));
-        edits.push_back(Edit().setPos(math::vec3(1., 1.0, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 1., 0.)).setRoughness(0.4));
-        edits.push_back(Edit().setPos(math::vec3(0., 2.7, 0.0)).setType(0).setScale(1.).setClr(math::vec3(0., 0., 1.)).setRoughness(0.8));
+        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.3}));
+        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.3}));
+        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.3}));
+        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
+        edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

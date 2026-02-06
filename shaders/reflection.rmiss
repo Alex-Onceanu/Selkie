@@ -10,9 +10,11 @@ layout(location = 2) rayPayloadInEXT payload_t payload;
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 
-vec3 mirrorRay(const vec3 ro, const vec3 rd)
+vec3 mirrorRay(const vec3 ro, const vec3 rd, inout float rrr)
 {
-    return vec3(1., 1., 1.);
+    // Color of mirror when looked at through a mirror
+    rrr = 1.;
+    return vec3(0.);
 }
 
 #include "raymarch.glsl"
