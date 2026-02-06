@@ -9,12 +9,6 @@ layout(location = 0) rayPayloadEXT payload_t payload;
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 layout(set = 0, binding = 1, rgba8) uniform image2D image;
 
-
-mat2 rot2D(const float theta)
-{
-    return mat2(vec2(cos(theta), -sin(theta)), vec2(sin(theta), cos(theta)));
-}
-
 void main()
 {
     vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchSizeEXT.xy);

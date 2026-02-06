@@ -1,0 +1,59 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+#include "constants.glsl"
+#include "ssbo.glsl"
+#include "sdfs.glsl"
+
+hitAttributeEXT vec3 normal;
+
+// returns distance to the closest object in the scene
+// computes n-ary exponential smooth minimum
+float map(const vec3 p)
+{
+    float sum = exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].type, ssbo.edits[gl_PrimitiveID].pos, ssbo.edits[gl_PrimitiveID].scale) * BLEND_STRENGTH);
+    for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
+    {
+        sum += exp2(-sdf(p, ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].type, 
+                            ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].pos, 
+                            ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].scale) * BLEND_STRENGTH);
+    }
+    return -log2(sum) / BLEND_STRENGTH;
+}
+
+// central differences
+vec3 computeNormal(const vec3 p)
+{
+    const float eps = 1e-4;
+    const vec2 h = vec2(eps,0);
+    return normalize( vec3(map(p+h.xyy) - map(p-h.xyy),
+                           map(p+h.yxy) - map(p-h.yxy),
+                           map(p+h.yyx) - map(p-h.yyx) ) );
+}
+
+void main()
+{
+    vec3 p = gl_WorldRayOriginEXT;
+    vec3 rd = normalize(gl_WorldRayDirectionEXT);
+
+    float t = 0.;
+    for(int i = 0; i < MAX_IT; i++)
+    {
+        float safeDist = map(p);
+
+        if(t > gl_RayTmaxEXT)
+        {
+            return;
+        }
+
+        if(safeDist <= gl_RayTminEXT)
+        {
+            normal = computeNormal(p);
+            reportIntersectionEXT(t / length(gl_WorldRayDirectionEXT), 0U);
+            return;
+        }
+
+        p += rd * safeDist;
+        t += safeDist;
+    }
+}

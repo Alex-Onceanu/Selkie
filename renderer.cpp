@@ -167,6 +167,7 @@ namespace
     std::vector<Buffer> bindingTableBufs{};
 
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
+    std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<Buffer> ssbos{};
 
     vk::DescriptorPool descriptorPool;
@@ -1086,48 +1087,12 @@ namespace
 
         device.freeCommandBuffers(commandPool, commandBuffer);
     }
-
-    void computeBoundingBoxes(std::vector<vk::AabbPositionsKHR>& aabbs0)
-    {
-        const float k = 1.0f; // TODO : put this smin constant in edits
-        for(const auto& e : edits)
-        {
-            math::vec3 p = e.pos;
-            math::vec3 s;
-
-            // compute bounding box for each primitive type
-            switch(e.type)
-            {
-            case 0:
-                #define ff 4.2
-                s = math::vec3(ff/5.,ff/5.,ff/5.);
-                break;
-            case 1:
-                s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
-                break;
-            case 2:
-                s = math::vec3(e.scale.x + e.scale.y, e.scale.y, e.scale.x + e.scale.y);
-                break;
-            case 3:
-                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
-                break;
-            case 4:
-                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
-                break;
-            case 5:
-                s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
-                break;
-            }
-            // s.x *= k; s.y *= k; s.z *= k;
-            aabbs0.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
-        }
-    }
     
     void createAccelerationStructures()
     {
         // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
         std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{}};
-        computeBoundingBoxes(aabbs[0]);
+        aabbs[0] = editsBoundingBoxes;
         
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1338,9 +1303,48 @@ namespace
         tlasDescInfo.setAccelerationStructures(tlasAccel);
     }
 
-    bool areEditsIntersecting(const Edit& a, const Edit& b)
+    void computeBoundingBoxes()
     {
-        // TODO : switch to sphere bounding boxes ?
+        const float k = 1. / 8.; // TODO : put this smin constant in edits
+        for(const auto& e : edits)
+        {
+            math::vec3 p = e.pos;
+            math::vec3 s;
+
+            // different bounding box for each primitive type
+            switch(e.type)
+            {
+            case 0:
+                #define ff 4.2
+                s = math::vec3(ff/5.,ff/5.,ff/5.);
+                break;
+            case 1:
+                s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
+                break;
+            case 2:
+                s = math::vec3(e.scale.x + e.scale.y, e.scale.y, e.scale.x + e.scale.y);
+                break;
+            case 3:
+                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
+                break;
+            case 4:
+                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
+                break;
+            case 5:
+                s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
+                break;
+            }
+            s.x += k; s.y += k; s.z += k;
+            editsBoundingBoxes.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
+        }
+    }
+
+    bool areBoxesIntersecting(const int i, const int j)
+    {
+        auto a = editsBoundingBoxes[i], b = editsBoundingBoxes[j];
+        return ( a.minX <= b.maxX && a.maxX >= b.minX) &&
+                (a.minY <= b.maxY && a.maxY >= b.minY) &&
+                (a.minZ <= b.maxZ && a.maxZ >= b.minZ);
     }
 
     void computeAllEditIntersections()
@@ -1350,7 +1354,7 @@ namespace
         {
             for(int j = i + 1; j < edits.size(); j++)
             {
-                if(areEditsIntersecting(edits[i], edits[j]))
+                if(areBoxesIntersecting(i, j))
                 {
                     edits[i].addNeighbour(j);
                     edits[j].addNeighbour(i); // optional ?
@@ -1382,6 +1386,7 @@ namespace
             }
         }
 
+        computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
         // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
         computeAllEditIntersections();
 
