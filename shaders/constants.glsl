@@ -2,9 +2,7 @@
 #define CONSTANTS_H
 
 #define FOV (70. * 3.1416 / 180.)
-#define MAX_IT 256
-#define SHADOW_MAX_IT 100
-#define REFLECT_MAX_IT 100
+#define MAX_IT 0
 #define T_MIN 1e-3
 #define T_MAX 1e2
 #define AMBIENT_INTENSITY 0.2

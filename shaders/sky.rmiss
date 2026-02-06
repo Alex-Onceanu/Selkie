@@ -84,7 +84,7 @@ vec3 skyColor(vec3 d)
     vec3 clr = 1. + 0.6 * randVector;
     float border = 1. - smoothstep(0.0, 0.015, centered.y); // temporary fix to the "neighbours" issue
 
-    return tanh(glow * clr) * border;
+    return (glow * clr) * border;
 }
 
 void main()

@@ -78,7 +78,7 @@ namespace
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
-    #define MAX_MERGES 8
+    #define MAX_MERGES 80
     struct alignas(64) Edit {
         math::vec3 pos;
         int type;
@@ -1092,7 +1092,10 @@ namespace
     {
         // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
         std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{}};
-        aabbs[0] = editsBoundingBoxes;
+        for(const auto e : editsBoundingBoxes)
+        {
+            aabbs[0].push_back(e);
+        }
         
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1315,8 +1318,7 @@ namespace
             switch(e.type)
             {
             case 0:
-                #define ff 4.2
-                s = math::vec3(ff/5.,ff/5.,ff/5.);
+                s = math::vec3(0.83, 0.83, 0.83);
                 break;
             case 1:
                 s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
@@ -1334,7 +1336,7 @@ namespace
                 s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
                 break;
             }
-            s.x += k; s.y += k; s.z += k;
+            // s.x += k; s.y += k; s.z += k;
             editsBoundingBoxes.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
         }
     }
@@ -1367,24 +1369,24 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.3}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.3}));
-        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.3}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
+        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 1.0}));
         // edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
 
-        const int s = 5;
-        const float sc = 2.;
-        for(int z = 0; z < s; z++)
-        {
-            for(int y = 0; y < s; y++)
-            {
-                for(int x = 0; x < s; x++)
-                {
-                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
-                }
-            }
-        }
+        // const int s = 5;
+        // const float sc = 2.;
+        // for(int z = 0; z < s; z++)
+        // {
+        //     for(int y = 0; y < s; y++)
+        //     {
+        //         for(int x = 0; x < s; x++)
+        //         {
+        //             edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
+        //         }
+        //     }
+        // }
 
         computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
         // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
@@ -1549,6 +1551,8 @@ namespace
         // En fait décrit à quoi va ressembler le descriptor set qui lui contiendra les uniform
         // D'ailleurs pas que les uniform ! Tout ce qui est attributs et autres inputs de chaque shader
         createDescriptorSetLayout();
+
+        std::cout << "<< Pipeline ..." << std::endl;
         
         // On charge les shaders compilés en .spv et on les lie
         createRaytracingPipeline();
@@ -1559,11 +1563,16 @@ namespace
         // Maintenant on crée les images qui serviront d'output au raygen shader (1 par frame in flight)
         createRTOutputImages();
 
+        std::cout << "<< SSBO ..." << std::endl;
+
         // Gros uniform globalement, contiendra l'ensemble des objets de la scène dans la VRAM
         createShaderStorageBufferObject();
 
+        std::cout << "<< Accels ..." << std::endl;
         // Arbre qui contiendra tous nos objets (TLAS), + pour chaque objet un arbre qui stocke ses primitives (BLAS)
         createAccelerationStructures();
+
+        std::cout << "<< Accels OK !" << std::endl;
         
         // Équivalent de commandPool mais pour uniform buffer
         createDescriptorPool();
@@ -1571,6 +1580,7 @@ namespace
         // Ce qu'on envoie au GPU (contient les uniform et est décrit par son descriptorSetLayout)
         createDescriptorSets();
         
+        std::cout << "<< Command buf ..." << std::endl;
         // Enregistrement des commandes qu'on veut faire pour le draw call
         createCommandBuffers();
         

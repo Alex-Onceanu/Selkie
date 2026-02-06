@@ -1,6 +1,5 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
-
 #include "constants.glsl"
 #include "main_payload.glsl"
 #include "ssbo.glsl"
