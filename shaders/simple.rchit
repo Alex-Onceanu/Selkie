@@ -28,8 +28,6 @@ vec3 computeNormal(const vec3 p)
 
 void main()
 {
-    payload.hitColor = vec3(1., 0., 0.);
-    return;
     const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
     vec3 lp = LIGHTPOS;
     lp.xz *= rot2D(-2.7 * time);

@@ -36,8 +36,8 @@ material_t blendMaterial(const vec3 p)
     float t = mixCoef(p);
     
     material_t mat;
-    mat.albedo = mix(eSSBO.edits[i].material.albedo, eSSBO.edits[j].material.albedo, t);
-    mat.roughness = mix(eSSBO.edits[i].material.roughness, eSSBO.edits[j].material.roughness, t);
+    mat.albedo = mix(eSSBO.edits[j].material.albedo, eSSBO.edits[i].material.albedo, t);
+    mat.roughness = mix(eSSBO.edits[j].material.roughness, eSSBO.edits[i].material.roughness, t);
     return mat;
 }
 
@@ -54,8 +54,6 @@ vec3 computeNormal(const vec3 p)
 
 void main()
 {
-    payload.hitColor = vec3(0., 0., 1.);
-    return;
     const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
     vec3 lp = LIGHTPOS;
     lp.xz *= rot2D(-2.7 * time);

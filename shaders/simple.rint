@@ -8,9 +8,6 @@
 
 void main()
 {
-    // debugPrintfEXT("Simple rint !");
-    reportIntersectionEXT(2., 0U);
-    return;
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
 

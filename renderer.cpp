@@ -824,9 +824,9 @@ namespace
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
-            .setClosestHitShader(4)
+            .setClosestHitShader(5)
             .setAnyHitShader(vk::ShaderUnusedKHR)
-            .setIntersectionShader(5));
+            .setIntersectionShader(4));
 
         vk::PushConstantRange pushRange;
         pushRange.setOffset(0);
