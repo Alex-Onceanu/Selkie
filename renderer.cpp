@@ -78,8 +78,8 @@ namespace
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
-    #define MAX_MERGES 80
-    struct alignas(64) Edit {
+    #define MAX_MERGES 28
+    struct Edit {
         math::vec3 pos;
         int type;
         Material mat;
@@ -95,21 +95,6 @@ namespace
         Edit& setScale(     const math::vec3 scale_)    { scale = scale_; return *this; }
         Edit& addNeighbour( const int neighbour_)       { if(nbNeighbours < MAX_MERGES) neighbours[nbNeighbours++] = neighbour_; return *this; }
     };
-
-    // class EditBuilder
-    // {
-    // public:
-    //     EditBuilder() = default;
-    //     Edit build() { return e; }
-
-    //     EditBuilder& setPos(        const math::vec3 pos_)      { e.pos = pos_; return *this; }
-    //     EditBuilder& setClr(        const math::vec3 clr_)      { e.clr = clr_; return *this; }
-    //     EditBuilder& setType(       const int type_)            { e.type = type_; return *this; }
-    //     EditBuilder& setRoughness(  const float roughness_)     { e.roughness = roughness_; return *this; }
-    //     EditBuilder& setScale(      const float scale_)         { e.scale = scale_; return *this; }
-    // private:
-    //     Edit e{};
-    // };
 };
 
 // attributs
@@ -893,7 +878,7 @@ namespace
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
             .setGeometry({ .instances = instancesData })
-            .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation);
+            .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
 
         auto buildInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
             .setType(vk::AccelerationStructureTypeKHR::eTopLevel)
@@ -1157,7 +1142,7 @@ namespace
             geometries.push_back(vk::AccelerationStructureGeometryKHR()
                 .setGeometryType(vk::GeometryTypeKHR::eAabbs)
                 .setGeometry({.aabbs = tmpAabbData})
-                .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation));
+                .setFlags(vk::GeometryFlagBitsKHR::eOpaque));
         }
 
         // remplir blasBuf, blasBufMemory, blasBufDeviceAddress, blasAccel, blasDescInfo
@@ -1248,8 +1233,7 @@ namespace
 
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
-            .setGeometry({.instances = instancesData})
-            .setFlags(vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation);
+            .setGeometry({.instances = instancesData});
             
         // remplir tlasBuf, tlasBufMemory, tlasBufDeviceAddress, tlasAccel, tlasDescInfo
         auto tlasBuildGeometryInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
@@ -1318,7 +1302,7 @@ namespace
             switch(e.type)
             {
             case 0:
-                s = math::vec3(0.83, 0.83, 0.83);
+                s = math::vec3(0.76, 0.76, 0.76);
                 break;
             case 1:
                 s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
@@ -1369,24 +1353,24 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 1.0}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}));
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(1., 1., 1.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 1.0}));
+        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 1.0}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}));
+        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 1.0}));
         // edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
 
-        // const int s = 5;
-        // const float sc = 2.;
-        // for(int z = 0; z < s; z++)
-        // {
-        //     for(int y = 0; y < s; y++)
-        //     {
-        //         for(int x = 0; x < s; x++)
-        //         {
-        //             edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
-        //         }
-        //     }
-        // }
+        const int s = 5;
+        const float sc = 2.;
+        for(int z = 0; z < s; z++)
+        {
+            for(int y = 0; y < s; y++)
+            {
+                for(int x = 0; x < s; x++)
+                {
+                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
+                }
+            }
+        }
 
         computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
         // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
@@ -1551,8 +1535,6 @@ namespace
         // En fait décrit à quoi va ressembler le descriptor set qui lui contiendra les uniform
         // D'ailleurs pas que les uniform ! Tout ce qui est attributs et autres inputs de chaque shader
         createDescriptorSetLayout();
-
-        std::cout << "<< Pipeline ..." << std::endl;
         
         // On charge les shaders compilés en .spv et on les lie
         createRaytracingPipeline();
@@ -1563,24 +1545,18 @@ namespace
         // Maintenant on crée les images qui serviront d'output au raygen shader (1 par frame in flight)
         createRTOutputImages();
 
-        std::cout << "<< SSBO ..." << std::endl;
-
         // Gros uniform globalement, contiendra l'ensemble des objets de la scène dans la VRAM
         createShaderStorageBufferObject();
 
-        std::cout << "<< Accels ..." << std::endl;
         // Arbre qui contiendra tous nos objets (TLAS), + pour chaque objet un arbre qui stocke ses primitives (BLAS)
         createAccelerationStructures();
-
-        std::cout << "<< Accels OK !" << std::endl;
         
         // Équivalent de commandPool mais pour uniform buffer
         createDescriptorPool();
         
         // Ce qu'on envoie au GPU (contient les uniform et est décrit par son descriptorSetLayout)
         createDescriptorSets();
-        
-        std::cout << "<< Command buf ..." << std::endl;
+
         // Enregistrement des commandes qu'on veut faire pour le draw call
         createCommandBuffers();
         

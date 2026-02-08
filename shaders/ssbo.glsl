@@ -3,7 +3,7 @@
 
 // TODO : separate this in 2 ssbos : one for shape, other for material ?
 // Should be a multiple of 4 for gpu memory alignment !!!
-#define MAX_MERGES 8
+#define MAX_MERGES 28
 
 struct material_t {
     vec3 albedo;

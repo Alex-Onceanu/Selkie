@@ -2,7 +2,6 @@
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_debug_printf : enable
 
-
 #include "constants.glsl"
 #include "ssbo.glsl"
 #include "sdfs.glsl"
@@ -35,7 +34,8 @@ vec3 computeNormal(const vec3 p)
 
 void main()
 {
-    debugPrintfEXT("Pos 0 : %f %f %f, Pos 1 : %f %f %f", ssbo.edits[0].pos.x, ssbo.edits[0].pos.y, ssbo.edits[0].pos.z, ssbo.edits[1].pos.x, ssbo.edits[1].pos.y, ssbo.edits[1].pos.z);
+    if(ssbo.edits[gl_PrimitiveID].nbNeighbours > 26)
+    debugPrintfEXT("nb neighbours = %d, type = %d, pos = %f %f %f, scale = %f %f %f", ssbo.edits[gl_PrimitiveID].nbNeighbours, ssbo.edits[gl_PrimitiveID].type, ssbo.edits[gl_PrimitiveID].pos.x, ssbo.edits[gl_PrimitiveID].pos.y, ssbo.edits[gl_PrimitiveID].pos.z, ssbo.edits[gl_PrimitiveID].scale.x, ssbo.edits[gl_PrimitiveID].scale.y, ssbo.edits[gl_PrimitiveID].scale.z);
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
 
@@ -52,7 +52,7 @@ void main()
         if(safeDist <= gl_RayTminEXT)
         {
             normal = computeNormal(p);
-            reportIntersectionEXT(t / length(gl_WorldRayDirectionEXT), 0U);
+            reportIntersectionEXT(t, 0U);
             return;
         }
 

@@ -49,20 +49,21 @@ float sdfRoundCone(const vec3 p, const vec3 s)
 // returns signed distance from p to the object (type, objPos, objScale) 
 float sdf(const vec3 p, const int type, const vec3 objPos, const vec3 objScale)
 {
+    vec3 relPos = objPos - p;
     switch(type)
     {
     case 0:
-        return sdfSphere(objPos, objScale.x);
+        return sdfSphere(relPos, objScale.x);
     case 1:
-        return sdfBox(objPos, objScale);
+        return sdfBox(relPos, objScale);
     case 2:
-        return sdfTorus(objPos, objScale.xy);
+        return sdfTorus(relPos, objScale.xy);
     case 3:
-        return sdfCapsule(objPos, objScale.xy);
+        return sdfCapsule(relPos, objScale.xy);
     case 4:
-        return sdfCylinder(objPos, objScale.xy);
+        return sdfCylinder(relPos, objScale.xy);
     case 5:
-        return sdfRoundCone(objPos, objScale);
+        return sdfRoundCone(relPos, objScale);
     default:
         break;
     }

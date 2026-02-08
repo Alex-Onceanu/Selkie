@@ -1,5 +1,7 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_debug_printf : enable
+
 #include "constants.glsl"
 #include "main_payload.glsl"
 #include "ssbo.glsl"
@@ -81,7 +83,7 @@ vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 l
 
 void main()
 {
-    const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+    const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
     vec3 lp = LIGHTPOS;
     lp.xz *= rot2D(-2.7 * time);
     payload.hitColor = sphereColor(p, gl_WorldRayDirectionEXT, blendMaterial(p), lp);
