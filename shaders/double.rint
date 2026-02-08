@@ -18,7 +18,7 @@ float map(const vec3 p)
 void main()
 {
     debugPrintfEXT("Double rint !");
-    reportIntersectionEXT(2., 0U);
+    reportIntersectionEXT(1.2, 0U);
     return;
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);

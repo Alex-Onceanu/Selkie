@@ -1117,12 +1117,12 @@ namespace
             void* data = device.mapMemory(stagingBuf.memory, 0, bufSize);
             memcpy(data, aabb.data(), (size_t)bufSize);
             device.unmapMemory(stagingBuf.memory);
-            
+
             // on met le staging buffer dans le vrai buffer
             aabbBufs.push_back(createBuffer(bufSize,  vk::BufferUsageFlagBits::eShaderDeviceAddress 
                                                     | vk::BufferUsageFlagBits::eTransferDst 
                                                     | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR, 
-                                             vk::MemoryPropertyFlagBits::eDeviceLocal));
+                                            vk::MemoryPropertyFlagBits::eDeviceLocal));
 
             copyBuffer(stagingBuf.buf, aabbBufs.back().buf, bufSize);
             stagingBuf.destroy();
@@ -1173,6 +1173,8 @@ namespace
         auto buildGeometryInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
             .setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
             .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)
+            .setGeometryCount(2)
+            .setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
             .setGeometries(geometries);
 
         vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo = device.getAccelerationStructureBuildSizesKHR(
@@ -1180,8 +1182,8 @@ namespace
                 
         vk::DeviceSize size = buildSizesInfo.accelerationStructureSize;
         blasBuf = createBuffer(size, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
-                                    | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
-                                        vk::MemoryPropertyFlagBits::eDeviceLocal); 
+                                   | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
+                                     vk::MemoryPropertyFlagBits::eDeviceLocal); 
         
         auto accelInfo = vk::AccelerationStructureCreateInfoKHR()
             .setBuffer(blasBuf.buf)
@@ -1189,7 +1191,7 @@ namespace
             .setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
             
         blasAccel = device.createAccelerationStructureKHR(accelInfo);
-            
+
         blasScratchBuf = createBuffer(buildSizesInfo.buildScratchSize, 
                                                 vk::BufferUsageFlagBits::eStorageBuffer 
                                             | vk::BufferUsageFlagBits::eShaderDeviceAddress,
@@ -1208,13 +1210,12 @@ namespace
         vk::CommandBuffer blasCommandBuffer = device.allocateCommandBuffers(commandBufferInfo).front();
 
         std::vector<vk::AccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
+        int acc = 0;
         for(int i = 0; i < primitiveCounts.size(); i++)
         {
             buildRangeInfos.push_back(vk::AccelerationStructureBuildRangeInfoKHR()
                 .setPrimitiveCount(primitiveCounts[i])
-                .setFirstVertex(0)
-                .setPrimitiveOffset(0)
-                .setTransformOffset(0));
+                .setPrimitiveOffset(0));
         }
         
         // on record la construction du blas
@@ -1242,7 +1243,7 @@ namespace
             .setMask(0xFF)
             .setAccelerationStructureReference(blasBuf.deviceAddress)
             .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
-            
+        
         tlasInstance = createBuffer(sizeof(vk::AccelerationStructureInstanceKHR), 
                                             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR 
                                           | vk::BufferUsageFlagBits::eStorageBuffer 
@@ -1399,7 +1400,7 @@ namespace
             {
                 for(int x = 0; x < s; x++)
                 {
-                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
+                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,1.5/5.,1.5/5.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
                 }
             }
         }
@@ -1498,9 +1499,9 @@ namespace
             // par contre ce qui m'étonne c'est qu'on écrit l'adresse mémoire de son propre programme au lieu d'écrire celle des autres shaders
             void* mapped = device.mapMemory(rgenTable.memory, 0, stride);
             memcpy(mapped, handleStorage.data() + 0 * handleSize, handleSize);
-            device.unmapMemory(rgenTable.memory);
-
             bindingTableBufs.push_back(rgenTable);
+            
+            device.unmapMemory(rgenTable.memory);
         }
 
         {
@@ -1510,9 +1511,9 @@ namespace
             
             void* mapped = device.mapMemory(rmissTable.memory, 0, stride);
             memcpy(mapped, handleStorage.data() + 1 * handleSize, handleSize);
-            device.unmapMemory(rmissTable.memory);
-
             bindingTableBufs.push_back(rmissTable);
+
+            device.unmapMemory(rmissTable.memory);
         }
 
         {
@@ -1523,14 +1524,14 @@ namespace
             uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
             memcpy(mapped, handleStorage.data() + 2 * handleSize, handleSize);
             memcpy(mapped + stride, handleStorage.data() + 3 * handleSize, handleSize);
-            device.unmapMemory(rhitTable.memory);
-
             bindingTableBufs.push_back(rhitTable);
+
+            device.unmapMemory(rhitTable.memory);
         }
 
         sbtRegions.push_back({bindingTableBufs[0].deviceAddress, stride, handleSize});
         sbtRegions.push_back({bindingTableBufs[1].deviceAddress, stride, handleSize});
-        sbtRegions.push_back({bindingTableBufs[2].deviceAddress, stride, handleSize});
+        sbtRegions.push_back({bindingTableBufs[2].deviceAddress, stride, 2 * handleSize});
 
         std::vector<vk::DescriptorSetLayout> layouts(NB_FRAMES_IN_FLIGHT, descriptorSetLayout);
         auto descSetInfo = vk::DescriptorSetAllocateInfo()
