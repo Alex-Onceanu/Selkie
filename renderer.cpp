@@ -138,21 +138,14 @@ namespace
     vk::WriteDescriptorSetAccelerationStructureKHR tlasDescInfo;
     vk::AccelerationStructureKHR tlasAccel;
     
-    std::vector<Buffer> eAABBBufs;
-    std::vector<Buffer> mAABBBufs;
+    std::vector<Buffer> aabbBufs;
     Buffer tlasInstance;
     Buffer tlasScratchBuf;
-
-    constexpr int NB_BLAS_IN_TLAS = 2;
-    Buffer eBlasScratchBuf;
-    vk::AccelerationStructureKHR eBlasAccel;
-    vk::WriteDescriptorSetAccelerationStructureKHR eBlasDescInfo;
-    Buffer eBlasBuf;
-
-    Buffer mBlasScratchBuf;
-    vk::AccelerationStructureKHR mBlasAccel;
-    vk::WriteDescriptorSetAccelerationStructureKHR mBlasDescInfo;
-    Buffer mBlasBuf;
+    
+    Buffer blasScratchBuf;
+    vk::AccelerationStructureKHR blasAccel;
+    vk::WriteDescriptorSetAccelerationStructureKHR blasDescInfo;
+    Buffer blasBuf;
     
     std::vector<vk::StridedDeviceAddressRegionKHR> sbtRegions{};
     std::vector<vk::DescriptorSetLayoutBinding> bindings{};
@@ -914,7 +907,7 @@ namespace
             .setScratchData({ .deviceAddress = tlasScratchBuf.deviceAddress });
 
         auto buildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
-            .setPrimitiveCount(NB_BLAS_IN_TLAS)
+            .setPrimitiveCount(1)
             .setFirstVertex(0)
             .setPrimitiveOffset(0)
             .setTransformOffset(0);
@@ -1096,29 +1089,34 @@ namespace
 
         device.freeCommandBuffers(commandPool, commandBuffer);
     }
-
-    void createBLAS(Buffer& blasScratchBuf, vk::AccelerationStructureKHR& blasAccel, vk::WriteDescriptorSetAccelerationStructureKHR& blasDescInfo, Buffer& blasBuf, std::vector<Buffer>& aabbBufs, const bool editsOrMerges)
+    
+    void createAccelerationStructures()
     {
-        // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs(1);
-        for(const auto e : (editsOrMerges ? editsBoundingBoxes : mergesBoundingBoxes))
+        for(const auto e : editsBoundingBoxes)
         {
             aabbs[0].push_back(e);
         }
+        for(const auto m : mergesBoundingBoxes)
+        {
+            aabbs[1].push_back(m);
+        }
         
+
+        // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs(2);
+
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
         std::vector<uint32_t> primitiveCounts{};
-        uint32_t primitiveCountSum = 0;
-        for(const auto& hitGroup : aabbs)
+        for(const auto& aabb : aabbs)
         {
-            vk::DeviceSize bufSize = hitGroup.size() * sizeof(hitGroup[0]);
+            vk::DeviceSize bufSize = aabb.size() * sizeof(aabb[0]);
 
             auto stagingBuf = createBuffer(bufSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                         vk::MemoryPropertyFlagBits::eHostCoherent | vk::MemoryPropertyFlagBits::eHostVisible);
     
             void* data = device.mapMemory(stagingBuf.memory, 0, bufSize);
-            memcpy(data, hitGroup.data(), (size_t)bufSize);
+            memcpy(data, aabb.data(), (size_t)bufSize);
             device.unmapMemory(stagingBuf.memory);
             
             // on met le staging buffer dans le vrai buffer
@@ -1136,8 +1134,7 @@ namespace
                 .setBuffer       (aabbBufs.back().buf)
                 .setSize         (VK_WHOLE_SIZE));
 
-            primitiveCounts.push_back(hitGroup.size());
-            primitiveCountSum += hitGroup.size();
+            primitiveCounts.push_back(aabb.size());
         }
 
         auto tmpCommandBufInfo = vk::CommandBufferAllocateInfo()
@@ -1161,6 +1158,8 @@ namespace
         std::vector<vk::AccelerationStructureGeometryKHR> geometries{};
         for(const auto& aabbBuf : aabbBufs)
         {
+            // 1 geometry = 1 hit group
+
             auto tmpAabbData = vk::AccelerationStructureGeometryAabbsDataKHR()
                 .setData({aabbBuf.deviceAddress})
                 .setStride(sizeof(vk::AabbPositionsKHR));
@@ -1181,8 +1180,8 @@ namespace
             vk::AccelerationStructureBuildTypeKHR::eDevice, buildGeometryInfo, primitiveCounts); 
                 
         vk::DeviceSize size = buildSizesInfo.accelerationStructureSize;
-        blasBuf = createBuffer(size,    vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
-                                      | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
+        blasBuf = createBuffer(size, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
+                                    | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
                                         vk::MemoryPropertyFlagBits::eDeviceLocal); 
         
         auto accelInfo = vk::AccelerationStructureCreateInfoKHR()
@@ -1199,21 +1198,29 @@ namespace
 
         buildGeometryInfo.setScratchData({blasScratchBuf.deviceAddress})
             .setDstAccelerationStructure(blasAccel);
-
+                        
+        // TODO : est-ce que c'est vrmt compatible avec notre command pool ?
+        // on alloue un nouveau command buf qui servira à construire le blas
+        // donc sera submit UNE seule fois au lancement du programme
         auto commandBufferInfo = vk::CommandBufferAllocateInfo()
             .setCommandPool(commandPool)
             .setCommandBufferCount(1);
-
-        vk::CommandBuffer blasCommandBuffer = device.allocateCommandBuffers(commandBufferInfo).front();
             
+        vk::CommandBuffer blasCommandBuffer = device.allocateCommandBuffers(commandBufferInfo).front();
+
+        std::vector<vk::AccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
+        for(int i = 0; i < primitiveCounts.size(); i++)
+        {
+            buildRangeInfos.push_back(vk::AccelerationStructureBuildRangeInfoKHR()
+                .setPrimitiveCount(primitiveCounts[i])
+                .setFirstVertex(0)
+                .setPrimitiveOffset(0)
+                .setTransformOffset(0));
+        }
+        
         // on record la construction du blas
         blasCommandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-        auto buildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
-            .setPrimitiveCount(primitiveCountSum)
-            .setFirstVertex(0)
-            .setPrimitiveOffset(0)
-            .setTransformOffset(0);
-        blasCommandBuffer.buildAccelerationStructuresKHR(buildGeometryInfo, &buildRangeInfo);
+        blasCommandBuffer.buildAccelerationStructuresKHR(buildGeometryInfo, buildRangeInfos.data());
         blasCommandBuffer.end();
         
         auto blasSubmitInfo = vk::SubmitInfo()
@@ -1222,13 +1229,7 @@ namespace
         graphicsQueue.waitIdle();
 
         blasDescInfo.setAccelerationStructures(blasAccel);
-    }
-    
-    void createAccelerationStructures()
-    {
-        createBLAS(eBlasScratchBuf, eBlasAccel, eBlasDescInfo, eBlasBuf, eAABBBufs, true);
-        createBLAS(mBlasScratchBuf, mBlasAccel, mBlasDescInfo, mBlasBuf, mAABBBufs, false);
-
+        
         // TLAS time babyy
         vk::TransformMatrixKHR transformMatrix{};
         transformMatrix.setMatrix(std::array{
@@ -1237,34 +1238,22 @@ namespace
             std::array{0.0f, 0.0f, 1.0f, 0.0f},
             });
 
-        auto eAccelInstance = vk::AccelerationStructureInstanceKHR()
+        auto accelInstance = vk::AccelerationStructureInstanceKHR()
             .setTransform(transformMatrix)
             .setMask(0xFF)
-            .setInstanceCustomIndex(0)
-            .setAccelerationStructureReference(eBlasBuf.deviceAddress)
-            .setInstanceShaderBindingTableRecordOffset(0)
+            .setAccelerationStructureReference(blasBuf.deviceAddress)
             .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
-
-        auto mAccelInstance = vk::AccelerationStructureInstanceKHR()
-            .setTransform(transformMatrix)
-            .setMask(0xFF)
-            .setInstanceCustomIndex(1)
-            .setAccelerationStructureReference(mBlasBuf.deviceAddress)
-            .setInstanceShaderBindingTableRecordOffset(1)
-            .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
-
-        vk::AccelerationStructureInstanceKHR allInstancesInTLAS[] = {eAccelInstance, mAccelInstance};
-
+            
         tlasInstance = createBuffer(sizeof(vk::AccelerationStructureInstanceKHR), 
                                             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR 
                                           | vk::BufferUsageFlagBits::eStorageBuffer 
                                           | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                             vk::MemoryPropertyFlagBits::eHostCoherent 
                                           | vk::MemoryPropertyFlagBits::eHostVisible);
-
+        
         {
-            void* data = device.mapMemory(tlasInstance.memory, 0, NB_BLAS_IN_TLAS * sizeof(vk::AccelerationStructureInstanceKHR));
-            memcpy(data, allInstancesInTLAS, NB_BLAS_IN_TLAS * sizeof(vk::AccelerationStructureInstanceKHR));
+            void* data = device.mapMemory(tlasInstance.memory, 0, sizeof(vk::AccelerationStructureInstanceKHR));
+            memcpy(data, &accelInstance, sizeof(vk::AccelerationStructureInstanceKHR));
             device.unmapMemory(tlasInstance.memory);
         }
 
@@ -1282,14 +1271,14 @@ namespace
             .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)
             .setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
             .setGeometries(instanceGeometry);
-
+            
         vk::AccelerationStructureBuildSizesInfoKHR tlasBuildSizesInfo = device.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice, tlasBuildGeometryInfo, NB_BLAS_IN_TLAS);
+            vk::AccelerationStructureBuildTypeKHR::eDevice, tlasBuildGeometryInfo, 1);
         vk::DeviceSize tlasSize = tlasBuildSizesInfo.accelerationStructureSize;
         tlasBufs = createBuffer(tlasSize, 
-                                vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
-                              | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
-                                vk::MemoryPropertyFlagBits::eDeviceLocal); 
+                                        vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
+                                        | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
+                                        vk::MemoryPropertyFlagBits::eDeviceLocal); 
             
         auto tlasAccelInfo = vk::AccelerationStructureCreateInfoKHR()
             .setBuffer(tlasBufs.buf)
@@ -1299,7 +1288,7 @@ namespace
             
         tlasScratchBuf = createBuffer(tlasBuildSizesInfo.buildScratchSize, 
                                                 vk::BufferUsageFlagBits::eStorageBuffer 
-                                              | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                            | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                                 vk::MemoryPropertyFlagBits::eDeviceLocal);
                 
         tlasBuildGeometryInfo.setScratchData({tlasScratchBuf.deviceAddress});
@@ -1309,18 +1298,18 @@ namespace
         auto tlasCommandBufferInfo = vk::CommandBufferAllocateInfo()
             .setCommandPool(commandPool)
             .setCommandBufferCount(1);
-
+            
         vk::CommandBuffer tlasCommandBuffer = device.allocateCommandBuffers(tlasCommandBufferInfo).front();
 
         tlasCommandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
         auto tlasBuildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
-            .setPrimitiveCount(NB_BLAS_IN_TLAS)
+            .setPrimitiveCount(1) // 1 seul noeud dans notre TLAS pour l'instant (y'a 1 objet)
             .setFirstVertex(0)
             .setPrimitiveOffset(0)
             .setTransformOffset(0);
         tlasCommandBuffer.buildAccelerationStructuresKHR(tlasBuildGeometryInfo, &tlasBuildRangeInfo);
         tlasCommandBuffer.end();
-
+            
         auto tlasSubmitInfo = vk::SubmitInfo()
             .setCommandBuffers(tlasCommandBuffer);
         graphicsQueue.submit({tlasSubmitInfo});
@@ -1645,18 +1634,14 @@ void sk::end()
         device.freeMemory(rtImageMemories[f]);
         device.destroyImage(rtImages[f]);
     }
-    eBlasBuf.destroy();
-    mBlasBuf.destroy();
+    blasBuf.destroy();
     tlasBufs.destroy();
-    device.destroyAccelerationStructureKHR(eBlasAccel);
-    device.destroyAccelerationStructureKHR(mBlasAccel);
+    device.destroyAccelerationStructureKHR(blasAccel);
     device.destroyAccelerationStructureKHR(tlasAccel);
-    for(auto& a : eAABBBufs) a.destroy();
-    for(auto& a : mAABBBufs) a.destroy();
+    for(auto& a : aabbBufs) a.destroy();
     tlasInstance.destroy();
     tlasScratchBuf.destroy();
-    eBlasScratchBuf.destroy();
-    mBlasScratchBuf.destroy();
+    blasScratchBuf.destroy();
     
     device.destroyPipeline(pipeline);
     device.destroyPipelineLayout(pipelineLayout);
