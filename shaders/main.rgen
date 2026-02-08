@@ -21,7 +21,7 @@ void main()
     cameraPos.xz *= rot2D(0.1 * time);
     rayDir.xz *= rot2D(0.1 * time);
 
-    traceRayEXT(bvh, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0, cameraPos, T_MIN, rayDir, T_MAX, 0);
+    traceRayEXT(bvh, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 1, cameraPos, T_MIN, rayDir, T_MAX, 0);
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.hitColor, 0.0));
 }

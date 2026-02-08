@@ -2,8 +2,8 @@
 #define MERGES_SSBO_H
 
 struct merge_t {
-    unsigned int first;
-    unsigned int second;
+    int first;
+    int second;
 };
 
 layout(set = 0, binding = 3, std430) buffer m_ssbo_t {
