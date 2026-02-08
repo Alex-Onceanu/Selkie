@@ -1092,6 +1092,9 @@ namespace
     
     void createAccelerationStructures()
     {
+        // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs(2);
+
         for(const auto e : editsBoundingBoxes)
         {
             aabbs[0].push_back(e);
@@ -1101,10 +1104,6 @@ namespace
             aabbs[1].push_back(m);
         }
         
-
-        // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs(2);
-
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
         std::vector<uint32_t> primitiveCounts{};

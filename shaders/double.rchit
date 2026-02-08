@@ -54,7 +54,7 @@ vec3 computeNormal(const vec3 p)
 
 void main()
 {
-    payload.hitColor = vec3(1., 0.3, 1.);
+    payload.hitColor = vec3(0., 0., 1.);
     return;
     const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
     vec3 lp = LIGHTPOS;
