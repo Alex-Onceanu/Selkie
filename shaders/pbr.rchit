@@ -72,6 +72,7 @@ vec3 mirrorRay(const vec3 ro, const vec3 rd)
 
 vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 lightPos)
 {
+    // return 0.5 * normal + vec3(0.5);
     const vec3 toLight = normalize(lightPos - p);
     const float diffuse = max(AMBIENT_INTENSITY, dot(normal, toLight));
 

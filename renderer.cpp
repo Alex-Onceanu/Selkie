@@ -78,7 +78,7 @@ namespace
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
-    #define MAX_MERGES 28
+    #define MAX_MERGES 8
     struct Edit {
         math::vec3 pos;
         int type;
@@ -151,6 +151,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
+    math::vec3 camPos(0., 2., 7.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<Buffer> ssbos{};
@@ -1292,7 +1293,6 @@ namespace
 
     void computeBoundingBoxes()
     {
-        const float k = 1. / 8.; // TODO : put this smin constant in edits
         for(const auto& e : edits)
         {
             math::vec3 p = e.pos;
@@ -1302,7 +1302,7 @@ namespace
             switch(e.type)
             {
             case 0:
-                s = math::vec3(0.76, 0.76, 0.76);
+                s = math::vec3(0.6);
                 break;
             case 1:
                 s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
@@ -1320,7 +1320,6 @@ namespace
                 s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
                 break;
             }
-            // s.x += k; s.y += k; s.z += k;
             editsBoundingBoxes.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
         }
     }
@@ -1333,8 +1332,49 @@ namespace
                 (a.minZ <= b.maxZ && a.maxZ >= b.minZ);
     }
 
+    math::vec3 rayAabb(const math::vec3 ro, const math::vec3 rd, const vk::AabbPositionsKHR& a)
+    {
+        return ro + rd * std::max({ 0.0f,
+            std::min((a.minX - ro.x) / rd.x, (a.maxX - ro.x) / rd.x), 
+            std::min((a.minY - ro.y) / rd.y, (a.maxY - ro.y) / rd.y), 
+            std::min((a.minZ - ro.z) / rd.z, (a.maxZ - ro.z) / rd.z),
+        });
+    }
+
+    void addNeighbourIfShould(const int i, const int j)
+    {
+        if(edits[i].nbNeighbours < MAX_MERGES)
+        {
+            edits[i].addNeighbour(j);
+            return;
+        }
+        int argmax = -1;
+        float maxdst = 0.;
+
+        math::vec3 editToEye = rayAabb(camPos, (edits[i].pos - camPos).normalize(), editsBoundingBoxes[i]);
+
+        for(int k = 0; k < edits[i].nbNeighbours; k++)
+        {
+            float d = (editToEye - edits[edits[i].neighbours[k]].pos).length();
+            if(d > maxdst)
+            {
+                maxdst = d;
+                argmax = k;
+            }
+        }
+        if((edits[i].pos - edits[j].pos).length() < maxdst)
+        {
+            edits[i].neighbours[argmax] = j;
+        }
+    }
+
     void computeAllEditIntersections()
     {
+        float cx = camPos.x * cosf(0.1 * 16.) + camPos.z * -sinf(0.1 * 16.);
+        float cz = camPos.x * sinf(0.1 * 16.) + camPos.z * cosf(0.1 * 16.);
+        camPos.x = cx;
+        camPos.z = cz;
+
         // naïve O(n²) approach for now
         for(int i = 0; i < edits.size(); i++)
         {
@@ -1342,8 +1382,8 @@ namespace
             {
                 if(areBoxesIntersecting(i, j))
                 {
-                    edits[i].addNeighbour(j);
-                    edits[j].addNeighbour(i); // optional ?
+                    addNeighbourIfShould(i, j);
+                    addNeighbourIfShould(j, i);
                 }
             }
         }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath> // sqrtf
+
 #define CLAMP(val, minval, maxval) (val > maxval ? maxval : (val < minval ? minval : val))
 
 namespace math
@@ -16,7 +18,22 @@ namespace math
         float x, y, z;
 
         vec3(float __x, float __y, float __z) { x = __x; y = __y; z = __z; };
+        vec3(float __xyz) { x = __xyz; y = __xyz; z = __xyz; };
         vec3() = default;
+
+        vec3& operator+=(const vec3 &r) { x += r.x; y += r.y; z += r.z; return *this; }
+        vec3& operator-=(const vec3 &r) { x -= r.x; y -= r.y; z -= r.z; return *this; }
+        vec3& operator*=(const float s) { x *= s; y *=s ; z *= s; return *this; }
+        vec3 operator+(const vec3 &r) const { return vec3(*this) += r; }
+        vec3 operator-(const vec3 &r) const { return vec3(*this) -= r; }
+
+        vec3 operator*(const float r) const { return vec3(*this) *= r; }
+        vec3 operator-() const { return vec3(-x, -y, -z); }
+
+
+        float dot(const vec3& r) { return x * r.x + y * r.y + z * r.z; }
+        float length() { return sqrtf(dot(*this)); }
+        vec3 normalize() { return *this * (1. / length()); }
     };
 
     struct vec4
