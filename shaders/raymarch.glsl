@@ -7,6 +7,11 @@ layout(push_constant) uniform PushConstants {
 
 #include "sdfs.glsl"
 
+float sig(float x)
+{
+    return (0.5 * tanh(4. * (x - 0.5)) + 0.5);
+}
+
 // computes partial derivative of exponential smooth minimum for each object then sums
 material_t blendMaterial(const vec3 p)
 {
@@ -17,7 +22,7 @@ material_t blendMaterial(const vec3 p)
     float sum = 0.;
     for(int e = 0; e < payload.nbHits; e++)
     {
-        float a_e = exp2(-whichSdf(p, e) * BLEND_STRENGTH);
+        float a_e = sig(exp2(-whichSdf(p, e) * BLEND_STRENGTH));
         mat.albedo += ssbo.edits[payload.hitIds[e]].material.albedo * a_e;
         mat.roughness += ssbo.edits[payload.hitIds[e]].material.roughness * a_e;
         sum += a_e;

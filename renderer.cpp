@@ -1112,13 +1112,39 @@ namespace
 
         device.freeCommandBuffers(commandPool, commandBuffer);
     }
+
+    // resizes all bounding boxes so that objects that will merge have common aabbs
+    void computeAllEditIntersections(std::vector<vk::AabbPositionsKHR>& aabbs)
+    {
+        const float BLEND_RADIUS = 0.81f;
+
+        std::vector<vk::AabbPositionsKHR> newAabbs(aabbs);
+
+        // naïve O(n²) approach for now
+        for(int i = 0; i < edits.size(); i++)
+        {
+            for(int j = 0; j < edits.size(); j++)
+            {
+                if((edits[i].pos - edits[j].pos).length() <= BLEND_RADIUS)
+                {
+                    vk::AabbPositionsKHR bb = { std::min(newAabbs[0][i].minX, aabbs[0][j].minX),
+                                                std::min(newAabbs[0][i].minY, aabbs[0][j].minY),
+                                                std::min(newAabbs[0][i].minZ, aabbs[0][j].minZ),
+                                                std::max(newAabbs[0][i].maxX, aabbs[0][j].maxX),
+                                                std::max(newAabbs[0][i].maxY, aabbs[0][j].maxY),
+                                                std::max(newAabbs[0][i].maxZ, aabbs[0][j].maxZ) };
+                    newAabbs[0][i] = bb;
+                }
+            }
+        }
+        aabbs = newAabbs;
+    }
     
     void createAccelerationStructures()
     {
         // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
         std::vector<std::vector<vk::AabbPositionsKHR>> aabbs = {{}};
         
-        const float k = 2.0f; // TODO : put this smin constant in edits
         for(const auto& e : edits)
         {
             math::vec3 p = e.pos;
@@ -1146,10 +1172,10 @@ namespace
                 s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
                 break;
             }
-
-            s.x *= k; s.y *= k; s.z *= k;
             aabbs[0].push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
         }
+
+        computeAllEditIntersections(aabbs[0]);
 
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1364,11 +1390,24 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
+        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(5).setScale(math::vec3(1., 0.4, 2.6)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
+        // edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
+
+        const int s = 5;
+        const float sc = 2.;
+        for(int z = 0; z < s; z++)
+        {
+            for(int y = 0; y < s; y++)
+            {
+                for(int x = 0; x < s; x++)
+                {
+                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.8/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 1.}));
+                }
+            }
+        }
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)

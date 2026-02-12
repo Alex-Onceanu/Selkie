@@ -1,14 +1,32 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
-
 #include "shadow_payload.glsl"
 
 layout(location = 1) rayPayloadInEXT shadowpayload_t payload;
+#include "sdfs.glsl"
 
 void main()
 {
     if(payload.nbHits < MAX_MERGES)
         payload.hitIds[payload.nbHits++] = gl_PrimitiveID;
+    else
+    {
+        int amx = -1;
+        float mx = 1. / 0.;
+        for(int i = 0; i < MAX_MERGES; i++)
+        {
+            float l = length(gl_WorldRayOriginEXT - ssbo.edits[payload.hitIds[i]].pos);
+            if(l < mx)
+            {
+                amx = i;
+                mx = l;
+            }
+        }
+        if(length(gl_WorldRayOriginEXT - ssbo.edits[gl_PrimitiveID].pos) < mx)
+        {
+            payload.hitIds[amx] = gl_PrimitiveID;
+        }
+    }
     ignoreIntersectionEXT;
 }
