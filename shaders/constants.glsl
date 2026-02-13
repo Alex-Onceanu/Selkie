@@ -2,7 +2,7 @@
 #define CONSTANTS_H
 
 #define FOV (70. * 3.1416 / 180.)
-#define MAX_IT 128
+#define MAX_IT 256
 #define T_MIN 1e-3
 #define T_MAX 1e3
 #define AMBIENT_INTENSITY 0.2

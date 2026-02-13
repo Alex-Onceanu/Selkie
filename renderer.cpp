@@ -151,7 +151,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
-    math::vec3 camPos(0., 2., 7.);
+    math::vec3 camPos(0., 2., 14.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<Buffer> ssbos{};
@@ -762,14 +762,20 @@ namespace
             "main.rgen",
             "sky.rmiss",
             "raymarch.rint",
-            "pbr.rchit"
+            "pbr.rchit",
+            "shadow.rmiss",
+            "shadow.rint",
+            "shadow.rahit"
         };
 
         vk::ShaderStageFlagBits stageTypes[] = { 
             vk::ShaderStageFlagBits::eRaygenKHR,
             vk::ShaderStageFlagBits::eMissKHR,
             vk::ShaderStageFlagBits::eIntersectionKHR,
-            vk::ShaderStageFlagBits::eClosestHitKHR
+            vk::ShaderStageFlagBits::eClosestHitKHR,
+            vk::ShaderStageFlagBits::eMissKHR,
+            vk::ShaderStageFlagBits::eIntersectionKHR,
+            vk::ShaderStageFlagBits::eAnyHitKHR
         };
 
         std::vector<vk::PipelineShaderStageCreateInfo> stages;
@@ -804,6 +810,14 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
 
+        // this rmiss is a noop
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+            .setGeneralShader(4)
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setIntersectionShader(vk::ShaderUnusedKHR));
+
         // hit group : même groupe pour tous les objets (ray marching en rint + matériau pbr en rchit)
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
@@ -811,6 +825,14 @@ namespace
             .setClosestHitShader(3)
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(2));
+
+        // shadow hit group
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
+            .setGeneralShader(vk::ShaderUnusedKHR)
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(6)
+            .setIntersectionShader(5));
 
         vk::PushConstantRange pushRange;
         pushRange.setOffset(0);
@@ -878,8 +900,8 @@ namespace
 
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
-            .setGeometry({ .instances = instancesData })
-            .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+            .setGeometry({ .instances = instancesData });
+            // .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
 
         auto buildInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
             .setType(vk::AccelerationStructureTypeKHR::eTopLevel)
@@ -973,7 +995,6 @@ namespace
         // {
         //     recordCommandBuffer(commandBuffers[i], (uint32_t)i);
         // }
-        
     }
     
     void createSyncObjects()
@@ -1142,8 +1163,8 @@ namespace
 
             geometries.push_back(vk::AccelerationStructureGeometryKHR()
                 .setGeometryType(vk::GeometryTypeKHR::eAabbs)
-                .setGeometry({.aabbs = tmpAabbData})
-                .setFlags(vk::GeometryFlagBitsKHR::eOpaque));
+                // .setFlags(vk::GeometryFlagBitsKHR::eOpaque)
+                .setGeometry({.aabbs = tmpAabbData}));
         }
 
         // remplir blasBuf, blasBufMemory, blasBufDeviceAddress, blasAccel, blasDescInfo
@@ -1389,7 +1410,7 @@ namespace
         }
 
         const float BLEND_RADIUS = 0.3;
-        const float A_BIT_MORE = 0.08f;
+        const float A_BIT_MORE = 0.05f;
         for(int i = 0; i < edits.size(); i++)
         {
             math::vec2 extension[3] = { math::vec2(0., 0.), math::vec2(0., 0.), math::vec2(0., 0.) };
@@ -1422,24 +1443,26 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
+        edits.push_back(Edit().setPos(math::vec3(-1.8, 1.0, -1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.2}));
+        edits.push_back(Edit().setPos(math::vec3( 1.8, 1.0, -1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.2}));
+        edits.push_back(Edit().setPos(math::vec3(-1.8, 1.0,  1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.2}));
+        edits.push_back(Edit().setPos(math::vec3( 1.8, 1.0,  1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.2}));
+        edits.push_back(Edit().setPos(math::vec3( 0.0, 3.2,  0.0)).setType(2).setScale(math::vec3(2., 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
 
-        const int s = 5;
-        const float sc = 2.;
-        for(int z = 0; z < s; z++)
-        {
-            for(int y = 0; y < s; y++)
-            {
-                for(int x = 0; x < s; x++)
-                {
-                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
-                }
-            }
-        }
+        // const int s = 5;
+        // const float sc = 2.;
+        // for(int z = 0; z < s; z++)
+        // {
+        //     for(int y = 0; y < s; y++)
+        //     {
+        //         for(int x = 0; x < s; x++)
+        //         {
+        //             edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 1.}));
+        //         }
+        //     }
+        // }
+        edits.push_back(Edit().setPos(math::vec3(0., 0.0, 0.)).setType(1).setScale(math::vec3(4.,0.6,4.)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 0.998}));
+        
 
         computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
         // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
@@ -1526,24 +1549,26 @@ namespace
         }
 
         {
-            auto rmissTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+            auto rmissTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
                                                      | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                             vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            void* mapped = device.mapMemory(rmissTable.memory, 0, stride);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rmissTable.memory, 0, 2 * stride);
             memcpy(mapped, handleStorage.data() + 1 * handleSize, handleSize);
+            memcpy(mapped + stride, handleStorage.data() + 2 * handleSize, handleSize);
             device.unmapMemory(rmissTable.memory);
 
             bindingTableBufs.push_back(rmissTable);
         }
 
         {
-            auto rhitTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+            auto rhitTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
                                                         | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                           vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            void* mapped = device.mapMemory(rhitTable.memory, 0, stride);
-            memcpy(mapped, handleStorage.data() + 2 * handleSize, handleSize);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
+            memcpy(mapped, handleStorage.data() + 3 * handleSize, handleSize);
+            memcpy(mapped + stride, handleStorage.data() + 4 * handleSize, handleSize);
             device.unmapMemory(rhitTable.memory);
 
             bindingTableBufs.push_back(rhitTable);

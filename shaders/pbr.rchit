@@ -1,15 +1,18 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
-#extension GL_EXT_debug_printf : enable
+// #extension GL_EXT_debug_printf : enable
 
 #include "constants.glsl"
 #include "main_payload.glsl"
+#include "shadow_payload.glsl"
 #include "ssbo.glsl"
 #include "sdfs.glsl"
 
 hitAttributeEXT vec3 normal;
 
 layout(location = 0) rayPayloadInEXT payload_t payload;
+layout(location = 1) rayPayloadEXT shadow_payload_t shadowPayload;
+
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 
 // computes partial derivative of exponential smooth minimum for each object then sums
@@ -39,36 +42,19 @@ material_t blendMaterial(const vec3 p)
     return mat;
 }
 
-/* TODO : change sbtRecordOffset 
-        void traceRayEXT(accelerationStructureEXT topLevel,
-                   uint rayFlags,
-                   uint cullMask,
-                   uint sbtRecordOffset,
-                   uint sbtRecordStride,
-                   uint missIndex,
-                   vec3 origin,
-                   float Tmin,
-                   vec3 direction,
-                   float Tmax,
-                   int payload);
-*/
 float shadowRay(const vec3 ro, const vec3 rd)
 {
-    return 1.;
-    // shadowPayload.nbHits = 0;
-    // shadowPayload.softShadow = 1.;
-    // traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0, ro, T_MIN, rd, T_MAX, 0);
+    shadowPayload.shadow = 1.;
+    traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 1, 2, 1, ro + 0.01 * normal, T_MIN, rd, T_MAX, 1);
 
-    // return clamp(shadowPayload.softShadow, AMBIENT_INTENSITY, 1.);
+    return min(max(shadowPayload.shadow, AMBIENT_INTENSITY), 1.);
 }
-vec3 mirrorRay(const vec3 ro, const vec3 rd)
-{
-    return vec3(1.);
-    // mirrorPayload.nbHits = 0;
-    // traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0, ro + 0.01 * rd, T_MIN, rd, T_MAX, 0);
-    
-    // return mirrorPayload.hitColor;
-}
+
+// vec3 mirrorRay(const vec3 ro, const vec3 rd)
+// {
+//     traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 2, 0, ro + 0.1 * rd, T_MIN, rd, T_MAX, 0);
+//     return payload.hitColor;
+// }
 
 vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 lightPos)
 {
@@ -77,9 +63,15 @@ vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 l
     const float diffuse = max(AMBIENT_INTENSITY, dot(normal, toLight));
 
     const float shadow = shadowRay(p, toLight);
-    const vec3 mir = mirrorRay(p, reflect(rd, normal));
-
-    return mix(mir, mat.albedo, mat.roughness) * min(shadow, diffuse);
+    if(mat.roughness < 1.)
+    {
+        payload.mirrorRay = true;
+        payload.mir_ro = p + 0.001 * normal;
+        payload.mir_rd = reflect(rd, normal);
+        payload.mir_rough = mat.roughness;
+    }
+    payload.shadow = min(shadow, diffuse);
+    return mat.albedo;
 }
 
 void main()

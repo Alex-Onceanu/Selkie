@@ -16,12 +16,38 @@ void main()
     uv.x *= 1366. / 768.; // aspect ratio
     uv.y = - uv.y;        // x goes right, y goes up, z towards me
 
-    vec3 cameraPos = vec3(0., 2.0, 7.);
+    vec3 cameraPos = vec3(0., 2.0, 14.);
     vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * FOV));
     cameraPos.xz *= rot2D(0.1 * 16.);
     rayDir.xz *= rot2D(0.1 * 16.);
 
-    traceRayEXT(bvh, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0, cameraPos, T_MIN, rayDir, T_MAX, 0);
+    payload.mirrorRay = false;
 
-    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.hitColor, 0.0));
+    /*  void traceRayEXT(accelerationStructureEXT topLevel,
+            uint rayFlags,
+            uint cullMask,
+            uint sbtRecordOffset,
+            uint sbtRecordStride,
+            uint missIndex,
+            vec3 origin,
+            float Tmin,
+            vec3 direction,
+            float Tmax,
+            int payload);
+    */
+    traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 2, 0, cameraPos, T_MIN, rayDir, T_MAX, 0);
+    vec3 clr = payload.hitColor;
+    float shadow = payload.shadow;
+    
+    // TODO : use a for-loop
+    float roughness = payload.mir_rough;
+    if(payload.mirrorRay)
+    {
+        payload.mirrorRay = false;
+        traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 2, 0, payload.mir_ro, T_MIN, payload.mir_rd, T_MAX, 0);
+        clr = mix(payload.hitColor, clr, roughness);
+        shadow *= payload.shadow;
+    }
+
+    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(clr * shadow, 0.0));
 }
