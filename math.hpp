@@ -15,7 +15,7 @@ namespace math
 
     struct vec3
     {
-        float x, y, z;
+        float x = 0.f, y = 0.f, z = 0.f;
 
         vec3(float __x, float __y, float __z) { x = __x; y = __y; z = __z; };
         vec3(float __xyz) { x = __xyz; y = __xyz; z = __xyz; };

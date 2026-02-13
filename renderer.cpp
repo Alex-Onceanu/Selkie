@@ -1302,7 +1302,7 @@ namespace
             switch(e.type)
             {
             case 0:
-                s = math::vec3(0.6);
+                s = math::vec3(e.scale.x, e.scale.x, e.scale.x);
                 break;
             case 1:
                 s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
@@ -1324,12 +1324,12 @@ namespace
         }
     }
 
-    bool areBoxesIntersecting(const int i, const int j)
+    bool areBoxesIntersecting(const int i, const int j, const float blend)
     {
         auto a = editsBoundingBoxes[i], b = editsBoundingBoxes[j];
-        return ( a.minX <= b.maxX && a.maxX >= b.minX) &&
-                (a.minY <= b.maxY && a.maxY >= b.minY) &&
-                (a.minZ <= b.maxZ && a.maxZ >= b.minZ);
+        return ( a.minX - blend <= b.maxX + blend && a.maxX + blend >= b.minX - blend) &&
+                (a.minY - blend <= b.maxY + blend && a.maxY + blend >= b.minY - blend) &&
+                (a.minZ - blend <= b.maxZ + blend && a.maxZ + blend >= b.minZ - blend);
     }
 
     math::vec3 rayAabb(const math::vec3 ro, const math::vec3 rd, const vk::AabbPositionsKHR& a)
@@ -1380,12 +1380,41 @@ namespace
         {
             for(int j = i + 1; j < edits.size(); j++)
             {
-                if(areBoxesIntersecting(i, j))
+                if(areBoxesIntersecting(i, j, 0.11))
                 {
                     addNeighbourIfShould(i, j);
                     addNeighbourIfShould(j, i);
                 }
             }
+        }
+
+        const float BLEND_RADIUS = 0.3;
+        const float A_BIT_MORE = 0.08f;
+        for(int i = 0; i < edits.size(); i++)
+        {
+            math::vec2 extension[3] = { math::vec2(0., 0.), math::vec2(0., 0.), math::vec2(0., 0.) };
+            for(int j = 0; j < edits[i].nbNeighbours; j++)
+            {
+                const int k = edits[i].neighbours[j];
+
+                if(edits[i].pos.x < edits[k].pos.x) 
+                    extension[0].y = std::min(BLEND_RADIUS, edits[k].pos.x - edits[i].pos.x + A_BIT_MORE);
+                else 
+                    extension[0].x = std::min(BLEND_RADIUS, edits[i].pos.x - edits[k].pos.x + A_BIT_MORE);
+
+                if(edits[i].pos.y < edits[k].pos.y) 
+                    extension[1].y = std::min(BLEND_RADIUS, edits[k].pos.y - edits[i].pos.y + A_BIT_MORE);
+                else 
+                    extension[1].x = std::min(BLEND_RADIUS, edits[i].pos.y - edits[k].pos.y + A_BIT_MORE);
+
+                if(edits[i].pos.z < edits[k].pos.z) 
+                    extension[2].y = std::min(BLEND_RADIUS, edits[k].pos.z - edits[i].pos.z + A_BIT_MORE);
+                else 
+                    extension[2].x = std::min(BLEND_RADIUS, edits[i].pos.z - edits[k].pos.z + A_BIT_MORE);
+            }
+            editsBoundingBoxes[i].minX -= extension[0].x; editsBoundingBoxes[i].maxX += extension[0].y;
+            editsBoundingBoxes[i].minY -= extension[1].x; editsBoundingBoxes[i].maxY += extension[1].y;
+            editsBoundingBoxes[i].minZ -= extension[2].x; editsBoundingBoxes[i].maxZ += extension[2].y;
         }
     }
 
