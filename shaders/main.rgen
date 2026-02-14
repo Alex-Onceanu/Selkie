@@ -45,7 +45,7 @@ void main()
     {
         payload.mirrorRay = false;
         traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 1, 0, payload.mir_ro, T_MIN, payload.mir_rd, T_MAX, 0);
-        clr = mix(payload.hitColor, clr, roughness);
+        clr = mix(clr * payload.hitColor, clr, roughness);
         shadow *= payload.shadow;
     }
 

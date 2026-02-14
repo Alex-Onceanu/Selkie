@@ -25,6 +25,7 @@ int main()
                 nbFrames = 0;
                 prevTime = currentTime;
             }
+
             sk::draw(elapsedTime);
             nbFrames++;
         }

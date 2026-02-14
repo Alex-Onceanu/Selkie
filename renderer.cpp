@@ -95,6 +95,8 @@ namespace
         Edit& setScale(     const math::vec3 scale_)    { scale = scale_; return *this; }
         Edit& addNeighbour( const int neighbour_)       { if(nbNeighbours < MAX_MERGES) neighbours[nbNeighbours++] = neighbour_; return *this; }
     };
+
+    class SSBO;
 };
 
 // attributs
@@ -154,7 +156,8 @@ namespace
     math::vec3 camPos(0., 2., 14.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
-    std::vector<Buffer> ssbos{};
+    std::vector<SSBO> ssbos{};
+    bool shouldUpdateSSBO = false;
 
     vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout descriptorSetLayout;
@@ -1094,6 +1097,96 @@ namespace
 
         device.freeCommandBuffers(commandPool, commandBuffer);
     }
+
+    // TODO : move this elsewhere
+    class SSBO {
+    private:
+        std::vector<Edit>& pEdits;
+        size_t prevNbElements;
+        size_t maxNbElements;
+        size_t bufSize;
+        Buffer buf;
+        void* mappedMem;
+        int frame;
+    public:
+        SSBO(std::vector<Edit>& pEdits__, int frame__)
+            : pEdits(pEdits__), frame(frame__)
+        {
+            maxNbElements = pEdits.size();
+            prevNbElements = maxNbElements;
+            bufSize = maxNbElements * sizeof(pEdits.front());
+            buf = createBuffer(bufSize, 
+                                vk::BufferUsageFlagBits::eStorageBuffer |
+                                vk::BufferUsageFlagBits::eShaderDeviceAddressKHR, 
+                                vk::MemoryPropertyFlagBits::eHostCoherent);
+
+            mappedMem = device.mapMemory(buf.memory, 0, bufSize);
+            memcpy(mappedMem, pEdits.data(), bufSize);
+
+            // TODO : should update descriptor sets but outside of this (since they don't exist yet at ssbo creation)
+        }
+
+        void destroy()
+        {
+            device.unmapMemory(buf.memory);
+            buf.destroy();
+        }
+
+        vk::Buffer getBuf()
+        {
+            return buf.buf;
+        }
+
+        void update()
+        {
+            if(pEdits.size() > maxNbElements)
+            {
+                maxNbElements *= 2;
+                bufSize = maxNbElements * sizeof(pEdits.front());
+                device.unmapMemory(buf.memory);
+                buf.destroy();
+                buf = createBuffer(bufSize, 
+                                    vk::BufferUsageFlagBits::eStorageBuffer |
+                                    vk::BufferUsageFlagBits::eShaderDeviceAddressKHR, 
+                                    vk::MemoryPropertyFlagBits::eHostCoherent);
+
+                mappedMem = device.mapMemory(buf.memory, 0, bufSize);
+                memcpy(mappedMem, pEdits.data(), bufSize);
+            }
+            else
+            {
+                memcpy(mappedMem, pEdits.data(), bufSize);
+            }
+
+            if(prevNbElements != pEdits.size())
+            {
+                auto descriptorWrite = vk::WriteDescriptorSet()
+                    .setDstSet(descriptorSets[frame])
+                    .setDstBinding(2)
+                    .setDescriptorType(bindings[2].descriptorType)
+                    .setDescriptorCount(bindings[2].descriptorCount)
+                    .setBufferInfo(vk::DescriptorBufferInfo().setBuffer(buf.buf).setOffset(0).setRange(pEdits.size() * sizeof(pEdits.front())));
+
+                device.updateDescriptorSets(descriptorWrite, nullptr);
+            }
+            prevNbElements = pEdits.size();
+        }
+    };
+
+    namespace Edits
+    {
+        unsigned int getNb() { return edits.size(); }
+        math::vec3 getPos(const unsigned int i) { return edits[i].pos; }
+        int getType(const unsigned int i) { return edits[i].type; }
+        math::vec3 getAlbedo(const unsigned int i) { return edits[i].mat.albedo; }
+        float getRoughness(const unsigned int i) { return edits[i].mat.roughness; }
+        math::vec3 getDimensions(const unsigned int i) { return edits[i].scale; }
+
+        void setPos(const unsigned int i, const math::vec3 p) { shouldUpdateSSBO = true; edits[i].pos = p; }
+        void setAlbedo(const unsigned int i, const math::vec3 a) { shouldUpdateSSBO = true; edits[i].mat.albedo = a; }
+        void setRoughness(const unsigned int i, const float r) { shouldUpdateSSBO = true; edits[i].mat.roughness = r; }
+        void setDimensions(const unsigned int i, const math::vec3 s) { shouldUpdateSSBO = true; edits[i].scale = s; }
+    }
     
     void createAccelerationStructures()
     {
@@ -1448,21 +1541,7 @@ namespace
         edits.push_back(Edit().setPos(math::vec3(-1.8, 1.0,  1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.2}));
         edits.push_back(Edit().setPos(math::vec3( 1.8, 1.0,  1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.2}));
         edits.push_back(Edit().setPos(math::vec3( 0.0, 3.2,  0.0)).setType(2).setScale(math::vec3(2., 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
-
-        // const int s = 5;
-        // const float sc = 2.;
-        // for(int z = 0; z < s; z++)
-        // {
-        //     for(int y = 0; y < s; y++)
-        //     {
-        //         for(int x = 0; x < s; x++)
-        //         {
-        //             edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,0.,0.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 1.}));
-        //         }
-        //     }
-        // }
         edits.push_back(Edit().setPos(math::vec3(0., 0.0, 0.)).setType(1).setScale(math::vec3(4.,0.6,4.)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 0.998}));
-        
 
         computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
         // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
@@ -1471,16 +1550,7 @@ namespace
         size_t bufSize = edits.size() * sizeof(edits[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
         {
-            auto newBuf = createBuffer(bufSize, 
-                                        vk::BufferUsageFlagBits::eStorageBuffer |
-                                        vk::BufferUsageFlagBits::eShaderDeviceAddressKHR, 
-                                        vk::MemoryPropertyFlagBits::eHostCoherent);
-
-            void* mapped = device.mapMemory(newBuf.memory, 0, bufSize);
-            memcpy(mapped, edits.data(), bufSize);
-            device.unmapMemory(newBuf.memory);
-
-            ssbos.push_back(newBuf);
+            ssbos.emplace_back(edits, i);
         }
     }
 
@@ -1597,7 +1667,7 @@ namespace
 
             writes[0].setPNext(tlasDescInfo);
             writes[1].setImageInfo(rtDescImageInfos[frame]);
-            writes[2].setBufferInfo(vk::DescriptorBufferInfo().setBuffer(ssbos[frame].buf).setOffset(0).setRange(edits.size() * sizeof(edits[0])));
+            writes[2].setBufferInfo(vk::DescriptorBufferInfo().setBuffer(ssbos[frame].getBuf()).setOffset(0).setRange(edits.size() * sizeof(edits[0])));
 
             device.updateDescriptorSets(writes, nullptr);
         }
@@ -1748,7 +1818,13 @@ void sk::draw(float t)
     
     // On reset le fence ment si on doit pas recréer la swap chain (évite une famine)
     device.resetFences(readyForNextFrameFences[currentFrame]);
-    
+
+    if(shouldUpdateSSBO)
+    {
+        ssbos[currentFrame].update();
+        shouldUpdateSSBO = false;
+    }
+
     // Ensuite il faut record ce qu'on veut faire dans commandBuffer, pour l'image d'indice imgId
     // commandBuffers[currentFrame].reset();
     recordCommandBuffer(commandBuffers[currentFrame], currentSwapChainImage, t);
