@@ -6,13 +6,15 @@
 
 int main()
 {
-    auto startTime = std::chrono::high_resolution_clock::now();
-    auto prevTime = startTime;
     try
     {
         auto window = sk::initWindow(1366, 768);
-        int nbFrames = 0;
 
+        auto startTime = std::chrono::high_resolution_clock::now();
+        auto prevTime = startTime;
+        bool event = false;
+
+        int nbFrames = 0;
         while(window->isAlive())
         {
             auto currentTime = std::chrono::high_resolution_clock::now();
@@ -24,6 +26,13 @@ int main()
                 std::cout << "FPS : " << nbFrames << std::endl;
                 nbFrames = 0;
                 prevTime = currentTime;
+            }
+
+            if(elapsedTime >= 4.f and not event)
+            {
+                event = true;
+                auto i = sk::edit::add(0);
+                sk::edit::setAlbedo(i, sk::math::vec3(0., 1., 1.));
             }
 
             sk::draw(elapsedTime);

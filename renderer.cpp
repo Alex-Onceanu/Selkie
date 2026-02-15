@@ -33,8 +33,8 @@ namespace
 {
     struct Vertex
     {
-        math::vec2 pos;
-        math::vec3 clr;
+        sk::math::vec2 pos;
+        sk::math::vec3 clr;
     };
 
     struct QueueFamilyIndices {
@@ -72,28 +72,42 @@ namespace
     };
 
     struct Material {
-        math::vec3 albedo;
-        float roughness;
+        sk::math::vec3 albedo{ 0.5 };
+        float roughness{ 1. };
     };
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
     #define MAX_MERGES 8
     struct Edit {
-        math::vec3 pos;
-        int type;
-        Material mat;
-        math::vec3 scale;
-        int nbNeighbours = 0;
-        int neighbours[MAX_MERGES];
+        sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, 
+                    transform_l2{ 0.,1.,0.,0. }, 
+                    transform_l3{ 0.,0.,1.,0. };
+        Material    mat{};
+        int         type{}; // 0 = sphere, 1 = box, 2 = torus, 3 = capsule, 4 = cylinder, 5 = rounded cone
+        sk::math::vec3  dimensions{ .5 };
+        float       rounding{};
+        sk::math::vec3  elongation{};
+        float       blendStrength = 9.;
+        sk::math::vec3  scale{ 1. };
+        bool        negative = false;
+        sk::math::vec3  bend{};
+        float       onion{};
+        float       norm{};
+        float       twist{};
+        int         nbNeighbours = 0;
+        int         neighbours[MAX_MERGES];
         // [...] remember to align to 16 bytes !
 
         Edit() = default;
-        Edit& setPos(       const math::vec3 pos_)      { pos = pos_; return *this; }
-        Edit& setMaterial(  const Material mat_)        { mat = mat_; return *this; }
-        Edit& setType(      const int type_)            { type = type_; return *this; }
-        Edit& setScale(     const math::vec3 scale_)    { scale = scale_; return *this; }
+        Edit& setPos(       const sk::math::vec3 pos_)      { transform_l1.w = pos_.x; transform_l2.w = pos_.y; transform_l3.w = pos_.z; return *this; }
+        Edit& setRotation(  const sk::math::mat3 rot_)      { transform_l1 = sk::math::vec4(rot_.C1.x, rot_.C2.x, rot_.C3.x, transform_l1.w); 
+                                                          transform_l2 = sk::math::vec4(rot_.C1.y, rot_.C2.y, rot_.C3.y, transform_l2.w); 
+                                                          transform_l3 = sk::math::vec4(rot_.C1.z, rot_.C2.z, rot_.C3.z, transform_l3.w); return *this; }
         Edit& addNeighbour( const int neighbour_)       { if(nbNeighbours < MAX_MERGES) neighbours[nbNeighbours++] = neighbour_; return *this; }
+
+        inline sk::math::vec3 getPos() const                       { return sk::math::vec3(transform_l1.w, transform_l2.w, transform_l3.w); }
+        inline sk::math::mat3 getRotation() const                  { return sk::math::mat3(transform_l1.xyz(), transform_l2.xyz(), transform_l3.xyz()); }
     };
 
     class SSBO;
@@ -153,7 +167,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
-    math::vec3 camPos(0., 2., 14.);
+    sk::math::vec3 camPos(0., 2., 14.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<SSBO> ssbos{};
@@ -1172,21 +1186,6 @@ namespace
             prevNbElements = pEdits.size();
         }
     };
-
-    namespace Edits
-    {
-        unsigned int getNb() { return edits.size(); }
-        math::vec3 getPos(const unsigned int i) { return edits[i].pos; }
-        int getType(const unsigned int i) { return edits[i].type; }
-        math::vec3 getAlbedo(const unsigned int i) { return edits[i].mat.albedo; }
-        float getRoughness(const unsigned int i) { return edits[i].mat.roughness; }
-        math::vec3 getDimensions(const unsigned int i) { return edits[i].scale; }
-
-        void setPos(const unsigned int i, const math::vec3 p) { shouldUpdateSSBO = true; edits[i].pos = p; }
-        void setAlbedo(const unsigned int i, const math::vec3 a) { shouldUpdateSSBO = true; edits[i].mat.albedo = a; }
-        void setRoughness(const unsigned int i, const float r) { shouldUpdateSSBO = true; edits[i].mat.roughness = r; }
-        void setDimensions(const unsigned int i, const math::vec3 s) { shouldUpdateSSBO = true; edits[i].scale = s; }
-    }
     
     void createAccelerationStructures()
     {
@@ -1409,29 +1408,29 @@ namespace
     {
         for(const auto& e : edits)
         {
-            math::vec3 p = e.pos;
-            math::vec3 s;
+            sk::math::vec3 p = e.getPos();
+            sk::math::vec3 s;
 
             // different bounding box for each primitive type
             switch(e.type)
             {
             case 0:
-                s = math::vec3(e.scale.x, e.scale.x, e.scale.x);
+                s = sk::math::vec3(e.dimensions.x, e.dimensions.x, e.dimensions.x);
                 break;
             case 1:
-                s = math::vec3(e.scale.x, e.scale.y, e.scale.z);
+                s = sk::math::vec3(e.dimensions.x, e.dimensions.y, e.dimensions.z);
                 break;
             case 2:
-                s = math::vec3(e.scale.x + e.scale.y, e.scale.y, e.scale.x + e.scale.y);
+                s = sk::math::vec3(e.dimensions.x + e.dimensions.y, e.dimensions.y, e.dimensions.x + e.dimensions.y);
                 break;
             case 3:
-                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
+                s = sk::math::vec3(e.dimensions.x, e.dimensions.y, e.dimensions.x);
                 break;
             case 4:
-                s = math::vec3(e.scale.x, e.scale.y, e.scale.x);
+                s = sk::math::vec3(e.dimensions.x, e.dimensions.y, e.dimensions.x);
                 break;
             case 5:
-                s = math::vec3(std::max(e.scale.x, e.scale.y), e.scale.z, std::max(e.scale.x, e.scale.y));
+                s = sk::math::vec3(std::max(e.dimensions.x, e.dimensions.y), e.dimensions.z, std::max(e.dimensions.x, e.dimensions.y));
                 break;
             }
             editsBoundingBoxes.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
@@ -1446,7 +1445,7 @@ namespace
                 (a.minZ - blend <= b.maxZ + blend && a.maxZ + blend >= b.minZ - blend);
     }
 
-    math::vec3 rayAabb(const math::vec3 ro, const math::vec3 rd, const vk::AabbPositionsKHR& a)
+    sk::math::vec3 rayAabb(const sk::math::vec3 ro, const sk::math::vec3 rd, const vk::AabbPositionsKHR& a)
     {
         return ro + rd * std::max({ 0.0f,
             std::min((a.minX - ro.x) / rd.x, (a.maxX - ro.x) / rd.x), 
@@ -1465,18 +1464,18 @@ namespace
         int argmax = -1;
         float maxdst = 0.;
 
-        math::vec3 editToEye = rayAabb(camPos, (edits[i].pos - camPos).normalize(), editsBoundingBoxes[i]);
+        sk::math::vec3 editToEye = rayAabb(camPos, (edits[i].getPos() - camPos).normalize(), editsBoundingBoxes[i]);
 
         for(int k = 0; k < edits[i].nbNeighbours; k++)
         {
-            float d = (editToEye - edits[edits[i].neighbours[k]].pos).length();
+            float d = (editToEye - edits[edits[i].neighbours[k]].getPos()).length();
             if(d > maxdst)
             {
                 maxdst = d;
                 argmax = k;
             }
         }
-        if((edits[i].pos - edits[j].pos).length() < maxdst)
+        if((edits[i].getPos() - edits[j].getPos()).length() < maxdst)
         {
             edits[i].neighbours[argmax] = j;
         }
@@ -1506,25 +1505,25 @@ namespace
         const float A_BIT_MORE = 0.05f;
         for(int i = 0; i < edits.size(); i++)
         {
-            math::vec2 extension[3] = { math::vec2(0., 0.), math::vec2(0., 0.), math::vec2(0., 0.) };
+            sk::math::vec2 extension[3] = { sk::math::vec2(0., 0.), sk::math::vec2(0., 0.), sk::math::vec2(0., 0.) };
             for(int j = 0; j < edits[i].nbNeighbours; j++)
             {
                 const int k = edits[i].neighbours[j];
 
-                if(edits[i].pos.x < edits[k].pos.x) 
-                    extension[0].y = std::min(BLEND_RADIUS, edits[k].pos.x - edits[i].pos.x + A_BIT_MORE);
+                if(edits[i].getPos().x < edits[k].getPos().x) 
+                    extension[0].y = std::min(BLEND_RADIUS, edits[k].getPos().x - edits[i].getPos().x + A_BIT_MORE);
                 else 
-                    extension[0].x = std::min(BLEND_RADIUS, edits[i].pos.x - edits[k].pos.x + A_BIT_MORE);
+                    extension[0].x = std::min(BLEND_RADIUS, edits[i].getPos().x - edits[k].getPos().x + A_BIT_MORE);
 
-                if(edits[i].pos.y < edits[k].pos.y) 
-                    extension[1].y = std::min(BLEND_RADIUS, edits[k].pos.y - edits[i].pos.y + A_BIT_MORE);
+                if(edits[i].getPos().y < edits[k].getPos().y) 
+                    extension[1].y = std::min(BLEND_RADIUS, edits[k].getPos().y - edits[i].getPos().y + A_BIT_MORE);
                 else 
-                    extension[1].x = std::min(BLEND_RADIUS, edits[i].pos.y - edits[k].pos.y + A_BIT_MORE);
+                    extension[1].x = std::min(BLEND_RADIUS, edits[i].getPos().y - edits[k].getPos().y + A_BIT_MORE);
 
-                if(edits[i].pos.z < edits[k].pos.z) 
-                    extension[2].y = std::min(BLEND_RADIUS, edits[k].pos.z - edits[i].pos.z + A_BIT_MORE);
+                if(edits[i].getPos().z < edits[k].getPos().z) 
+                    extension[2].y = std::min(BLEND_RADIUS, edits[k].getPos().z - edits[i].getPos().z + A_BIT_MORE);
                 else 
-                    extension[2].x = std::min(BLEND_RADIUS, edits[i].pos.z - edits[k].pos.z + A_BIT_MORE);
+                    extension[2].x = std::min(BLEND_RADIUS, edits[i].getPos().z - edits[k].getPos().z + A_BIT_MORE);
             }
             editsBoundingBoxes[i].minX -= extension[0].x; editsBoundingBoxes[i].maxX += extension[0].y;
             editsBoundingBoxes[i].minY -= extension[1].x; editsBoundingBoxes[i].maxY += extension[1].y;
@@ -1536,12 +1535,8 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-1.8, 1.0, -1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.2}));
-        edits.push_back(Edit().setPos(math::vec3( 1.8, 1.0, -1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 0.2}));
-        edits.push_back(Edit().setPos(math::vec3(-1.8, 1.0,  1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 0.2}));
-        edits.push_back(Edit().setPos(math::vec3( 1.8, 1.0,  1.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.2}));
-        edits.push_back(Edit().setPos(math::vec3( 0.0, 3.2,  0.0)).setType(2).setScale(math::vec3(2., 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.3}));
-        edits.push_back(Edit().setPos(math::vec3(0., 0.0, 0.)).setType(1).setScale(math::vec3(4.,0.6,4.)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 0.998}));
+
+        // edits.push_back(Edit().setA().setB().[...])
 
         computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
         // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
@@ -1870,4 +1865,39 @@ void sk::draw(float t)
     }
 
     currentFrame = (1 + currentFrame) % NB_FRAMES_IN_FLIGHT;
+}
+
+namespace sk::edit
+{
+    unsigned int    getNb()                                 { return edits.size(); }
+    math::vec3      getPos(         const unsigned int i)   { return edits[i].getPos(); }
+    int             getType(        const unsigned int i)   { return edits[i].type; }
+    math::vec3      getAlbedo(      const unsigned int i)   { return edits[i].mat.albedo; }
+    float           getRoughness(   const unsigned int i)   { return edits[i].mat.roughness; }
+    math::vec3      getDimensions(  const unsigned int i)   { return edits[i].dimensions; }
+
+    void shouldUpdate() { shouldUpdateSSBO = true; }
+
+    unsigned int add(const int type__)
+    { 
+        shouldUpdate(); 
+        edits.emplace_back(); 
+        edits.back().type = type__; 
+        return edits.size() - 1;
+    }
+    
+    void setPos(            const unsigned int i, const math::vec3 p)   { shouldUpdate(); edits[i].setPos(p); }
+    void setRotation(       const unsigned int i, const math::mat3 r)   { shouldUpdate(); edits[i].setRotation(r); }
+    void setAlbedo(         const unsigned int i, const math::vec3 a)   { shouldUpdate(); edits[i].mat.albedo = a; }
+    void setRoughness(      const unsigned int i, const float r)        { shouldUpdate(); edits[i].mat.roughness = r; }
+    void setDimensions(     const unsigned int i, const math::vec3 s)   { shouldUpdate(); edits[i].dimensions = s; }
+    void setRounding(       const unsigned int i, const float v)        { shouldUpdate(); edits[i].rounding = v; }        
+    void setElongation(     const unsigned int i, const math::vec3 v)   { shouldUpdate(); edits[i].elongation = v; }
+    void setBlendStrength(  const unsigned int i, const float v)        { shouldUpdate(); edits[i].blendStrength = v; }
+    void setScale(          const unsigned int i, const math::vec3 v)   { shouldUpdate(); edits[i].scale = v; }
+    void setNegative(       const unsigned int i, const bool v)         { shouldUpdate(); edits[i].negative = v; }
+    void setBend(           const unsigned int i, const math::vec3 v)   { shouldUpdate(); edits[i].bend = v; }
+    void setOnion(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].onion = v; }
+    void setNorm(           const unsigned int i, const float v)        { shouldUpdate(); edits[i].norm = v; }
+    void setTwist(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].twist = v; }
 }
