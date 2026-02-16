@@ -152,9 +152,16 @@ namespace
     vk::WriteDescriptorSetAccelerationStructureKHR tlasDescInfo;
     vk::AccelerationStructureKHR tlasAccel;
     
+    size_t aabbsStagingBufferMaxSize = 1000; // once the number of edits crosses a certain threshold, reallocate this staging buffer
+    Buffer aabbsStagingBuffer; // TODO : this should be a vector (one staging buf for every hitgroup)
+    // basically this entire part should be reviewed when adapting this to multiple hitgroups
+    void* aabbsStagingBufferMapped;
     std::vector<Buffer> aabbBufs;
+
     Buffer tlasInstance;
+    void* tlasInstanceMapped;
     Buffer tlasScratchBuf;
+    vk::TransformMatrixKHR transformMatrix{};
     
     Buffer blasScratchBuf;
     vk::AccelerationStructureKHR blasAccel;
@@ -171,7 +178,7 @@ namespace
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<SSBO> ssbos{};
-    bool shouldUpdateSSBO = false;
+    bool shouldUpdateSSBO[NB_FRAMES_IN_FLIGHT];
 
     vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout descriptorSetLayout;
@@ -893,6 +900,73 @@ namespace
             throw std::runtime_error("Failed to create command pool.");
         }
     }
+
+
+    Buffer createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
+    {
+        vk::BufferCreateInfo bufferInfo{
+            .size = size,
+            .usage = usage,
+            .sharingMode = vk::SharingMode::eExclusive  // car utilisé par 1 seule family queue
+        };
+        
+        auto buffer = device.createBuffer(bufferInfo);
+
+        vk::MemoryRequirements memReq = device.getBufferMemoryRequirements(buffer);
+    
+        vk::MemoryAllocateInfo allocInfo{
+            .allocationSize = memReq.size,
+            .memoryTypeIndex = findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent | properties)
+        };
+
+        auto flagsInfo = vk::MemoryAllocateFlagsInfo().setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
+        if(usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)
+        {
+            allocInfo.setPNext(&flagsInfo);
+        }
+        
+        auto bufferMemory = device.allocateMemory(allocInfo);
+
+        device.bindBufferMemory(buffer, bufferMemory, 0);
+
+        vk::BufferDeviceAddressInfoKHR bdaInfo{
+            .sType = vk::StructureType::eBufferDeviceAddressInfo,
+            .buffer = buffer
+        };
+        auto bufferAddress = device.getBufferAddressKHR(&bdaInfo);
+
+        return Buffer({.device = device, .buf = buffer, .memory = bufferMemory, .deviceAddress = bufferAddress});
+    }
+    
+    void copyBuffer(vk::Buffer& srcBuf, vk::Buffer& dstBuf, vk::DeviceSize size)
+    {
+        vk::CommandBufferAllocateInfo allocInfo {
+            .commandPool = commandPool,
+            .level = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount = 1
+        };
+        
+        vk::CommandBuffer commandBuffer = device.allocateCommandBuffers(allocInfo).front();
+        
+        commandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        
+        vk::BufferCopy copyRegion {
+            .size = size
+        };
+        
+        commandBuffer.copyBuffer(srcBuf, dstBuf, 1, &copyRegion);
+        commandBuffer.end();
+        
+        vk::SubmitInfo submitInfo {
+            .commandBufferCount = 1,
+            .pCommandBuffers = &commandBuffer,
+        };
+        
+        graphicsQueue.submit(submitInfo);
+        graphicsQueue.waitIdle();
+
+        device.freeCommandBuffers(commandPool, commandBuffer);
+    }
     
     // Permet d'écrire les commandes qu'on souhaite dans un command buffer
     // Cette commande s'adresse au rendu sur une image de la swapChain, d'indice imageIndex
@@ -907,9 +981,87 @@ namespace
         } catch (vk::SystemError err) {
             throw std::runtime_error("Failed to start recording commands in command buffer.");
         }
-        
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, descriptorSets[currentFrame], nullptr);
+
+        if(shouldUpdateSSBO[currentFrame])
+        {
+            if(editsBoundingBoxes.size() > aabbsStagingBufferMaxSize)
+            {
+                aabbsStagingBufferMaxSize *= 2;
+                aabbsStagingBuffer = createBuffer(aabbsStagingBufferMaxSize * sizeof(editsBoundingBoxes[0]), vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                        vk::MemoryPropertyFlagBits::eHostCoherent | vk::MemoryPropertyFlagBits::eHostVisible);
+    
+                aabbsStagingBufferMapped = device.mapMemory(aabbsStagingBuffer.memory, 0, aabbsStagingBufferMaxSize * sizeof(editsBoundingBoxes[0]));
+            }
+            memcpy(aabbsStagingBufferMapped, editsBoundingBoxes.data(), editsBoundingBoxes.size() * sizeof(vk::AabbPositionsKHR));
+
+            vk::BufferCopy copyRegion{0, 0, editsBoundingBoxes.size() * sizeof(vk::AabbPositionsKHR)};
+            commandBuffer.copyBuffer(aabbsStagingBuffer.buf, aabbBufs[0].buf, 1, &copyRegion);
+
+            {
+                vk::BufferMemoryBarrier barrier = vk::BufferMemoryBarrier()
+                    .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+                    .setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR)
+                    .setBuffer(aabbBufs[0].buf)
+                    .setSize(VK_WHOLE_SIZE);
+
+                commandBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eTransfer,
+                    vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+                    {}, nullptr, barrier, nullptr
+                );
+            }
+            std::vector<vk::AccelerationStructureGeometryKHR> geometries{};
+            for(const auto& aabbBuf : aabbBufs)
+            {
+                auto tmpAabbData = vk::AccelerationStructureGeometryAabbsDataKHR()
+                    .setData({aabbBuf.deviceAddress})
+                    .setStride(sizeof(vk::AabbPositionsKHR));
+
+                geometries.push_back(vk::AccelerationStructureGeometryKHR()
+                    .setGeometryType(vk::GeometryTypeKHR::eAabbs)
+                    // .setFlags(vk::GeometryFlagBitsKHR::eOpaque)
+                    .setGeometry({.aabbs = tmpAabbData}));
+            }
+
+            auto buildGeometryInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
+                .setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
+                .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)
+                .setGeometries(geometries)
+                .setScratchData({blasScratchBuf.deviceAddress})
+                .setMode(vk::BuildAccelerationStructureModeKHR::eBuild) // eUpdate if only movement and no size change
+                .setSrcAccelerationStructure(blasAccel)
+                .setDstAccelerationStructure(blasAccel);
+
+            auto buildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
+                .setPrimitiveCount(editsBoundingBoxes.size())
+                .setFirstVertex(0)
+                .setPrimitiveOffset(0)
+                .setTransformOffset(0);
+
+            commandBuffer.buildAccelerationStructuresKHR(buildGeometryInfo, &buildRangeInfo);
+
+            // update the "instance" (= reference of the BLAS inside the TLAS) with a memcpy
+            auto accelInstance = vk::AccelerationStructureInstanceKHR()
+                .setTransform(transformMatrix)
+                .setMask(0xFF)
+                .setAccelerationStructureReference(device.getAccelerationStructureAddressKHR(vk::AccelerationStructureDeviceAddressInfoKHR().setAccelerationStructure(blasAccel)));
+            memcpy(tlasInstanceMapped, &accelInstance, sizeof(vk::AccelerationStructureInstanceKHR));
+
+            auto barrier = vk::MemoryBarrier()
+                .setSrcAccessMask(vk::AccessFlagBits::eAccelerationStructureWriteKHR)
+                .setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR);
+
+            commandBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+                vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+                {},
+                barrier,
+                nullptr,
+                nullptr
+            );
+        }
 
         auto instancesData = vk::AccelerationStructureGeometryInstancesDataKHR()
             .setArrayOfPointers(false)
@@ -1045,72 +1197,6 @@ namespace
             throw std::runtime_error("Failed to create semaphores / fence.");
         }
     }
-    
-    Buffer createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
-    {
-        vk::BufferCreateInfo bufferInfo{
-            .size = size,
-            .usage = usage,
-            .sharingMode = vk::SharingMode::eExclusive  // car utilisé par 1 seule family queue
-        };
-        
-        auto buffer = device.createBuffer(bufferInfo);
-
-        vk::MemoryRequirements memReq = device.getBufferMemoryRequirements(buffer);
-    
-        vk::MemoryAllocateInfo allocInfo{
-            .allocationSize = memReq.size,
-            .memoryTypeIndex = findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent | properties)
-        };
-
-        auto flagsInfo = vk::MemoryAllocateFlagsInfo().setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
-        if(usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)
-        {
-            allocInfo.setPNext(&flagsInfo);
-        }
-        
-        auto bufferMemory = device.allocateMemory(allocInfo);
-
-        device.bindBufferMemory(buffer, bufferMemory, 0);
-
-        vk::BufferDeviceAddressInfoKHR bdaInfo{
-            .sType = vk::StructureType::eBufferDeviceAddressInfo,
-            .buffer = buffer
-        };
-        auto bufferAddress = device.getBufferAddressKHR(&bdaInfo);
-
-        return Buffer({.device = device, .buf = buffer, .memory = bufferMemory, .deviceAddress = bufferAddress});
-    }
-    
-    void copyBuffer(vk::Buffer& srcBuf, vk::Buffer& dstBuf, vk::DeviceSize size)
-    {
-        vk::CommandBufferAllocateInfo allocInfo {
-            .commandPool = commandPool,
-            .level = vk::CommandBufferLevel::ePrimary,
-            .commandBufferCount = 1
-        };
-        
-        vk::CommandBuffer commandBuffer = device.allocateCommandBuffers(allocInfo).front();
-        
-        commandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-        
-        vk::BufferCopy copyRegion {
-            .size = size
-        };
-        
-        commandBuffer.copyBuffer(srcBuf, dstBuf, 1, &copyRegion);
-        commandBuffer.end();
-        
-        vk::SubmitInfo submitInfo {
-            .commandBufferCount = 1,
-            .pCommandBuffers = &commandBuffer,
-        };
-        
-        graphicsQueue.submit(submitInfo);
-        graphicsQueue.waitIdle();
-
-        device.freeCommandBuffers(commandPool, commandBuffer);
-    }
 
     // TODO : move this elsewhere
     class SSBO {
@@ -1195,6 +1281,8 @@ namespace
         {
             aabbs[0].push_back(e);
         }
+
+        aabbsStagingBufferMaxSize = std::max(aabbsStagingBufferMaxSize, editsBoundingBoxes.size());
         
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
@@ -1203,12 +1291,11 @@ namespace
         {
             vk::DeviceSize bufSize = aabb.size() * sizeof(aabb[0]);
 
-            auto stagingBuf = createBuffer(bufSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            aabbsStagingBuffer = createBuffer(aabbsStagingBufferMaxSize * sizeof(aabb[0]), vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                         vk::MemoryPropertyFlagBits::eHostCoherent | vk::MemoryPropertyFlagBits::eHostVisible);
     
-            void* data = device.mapMemory(stagingBuf.memory, 0, bufSize);
-            memcpy(data, aabb.data(), (size_t)bufSize);
-            device.unmapMemory(stagingBuf.memory);
+            aabbsStagingBufferMapped = device.mapMemory(aabbsStagingBuffer.memory, 0, aabbsStagingBufferMaxSize * sizeof(aabb[0]));
+            memcpy(aabbsStagingBufferMapped, aabb.data(), (size_t)bufSize);
             
             // on met le staging buffer dans le vrai buffer
             aabbBufs.push_back(createBuffer(bufSize,  vk::BufferUsageFlagBits::eShaderDeviceAddress 
@@ -1216,8 +1303,7 @@ namespace
                                                     | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR, 
                                              vk::MemoryPropertyFlagBits::eDeviceLocal));
 
-            copyBuffer(stagingBuf.buf, aabbBufs.back().buf, bufSize);
-            stagingBuf.destroy();
+            copyBuffer(aabbsStagingBuffer.buf, aabbBufs.back().buf, bufSize);
 
             barriers.push_back(vk::BufferMemoryBarrier()
                 .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
@@ -1267,7 +1353,7 @@ namespace
 
         vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo = device.getAccelerationStructureBuildSizesKHR(
             vk::AccelerationStructureBuildTypeKHR::eDevice, buildGeometryInfo, primitiveCounts); 
-                
+
         vk::DeviceSize size = buildSizesInfo.accelerationStructureSize;
         blasBuf = createBuffer(size, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR 
                                     | vk::BufferUsageFlagBits::eShaderDeviceAddress, 
@@ -1287,14 +1373,14 @@ namespace
 
         buildGeometryInfo.setScratchData({blasScratchBuf.deviceAddress})
             .setDstAccelerationStructure(blasAccel);
-                        
+
         // TODO : est-ce que c'est vrmt compatible avec notre command pool ?
         // on alloue un nouveau command buf qui servira à construire le blas
         // donc sera submit UNE seule fois au lancement du programme
         auto commandBufferInfo = vk::CommandBufferAllocateInfo()
             .setCommandPool(commandPool)
             .setCommandBufferCount(1);
-            
+
         vk::CommandBuffer blasCommandBuffer = device.allocateCommandBuffers(commandBufferInfo).front();
             
         // on record la construction du blas
@@ -1315,7 +1401,6 @@ namespace
         blasDescInfo.setAccelerationStructures(blasAccel);
         
         // TLAS time babyy
-        vk::TransformMatrixKHR transformMatrix{};
         transformMatrix.setMatrix(std::array{
             std::array{1.0f, 0.0f, 0.0f, 0.0f},
             std::array{0.0f, 1.0f, 0.0f, 0.0f},
@@ -1336,9 +1421,8 @@ namespace
                                           | vk::MemoryPropertyFlagBits::eHostVisible);
         
         {
-            void* data = device.mapMemory(tlasInstance.memory, 0, sizeof(vk::AccelerationStructureInstanceKHR));
-            memcpy(data, &accelInstance, sizeof(vk::AccelerationStructureInstanceKHR));
-            device.unmapMemory(tlasInstance.memory);
+            tlasInstanceMapped = device.mapMemory(tlasInstance.memory, 0, sizeof(vk::AccelerationStructureInstanceKHR));
+            memcpy(tlasInstanceMapped, &accelInstance, sizeof(vk::AccelerationStructureInstanceKHR));
         }
 
         auto instancesData = vk::AccelerationStructureGeometryInstancesDataKHR()
@@ -1382,10 +1466,11 @@ namespace
         auto tlasCommandBufferInfo = vk::CommandBufferAllocateInfo()
             .setCommandPool(commandPool)
             .setCommandBufferCount(1);
-            
+
         vk::CommandBuffer tlasCommandBuffer = device.allocateCommandBuffers(tlasCommandBufferInfo).front();
 
         tlasCommandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        // TODO : THIS ONLY WORKS FOR 1 GEOMETRY !!!! for multiple build ranges, see "2-merges are objects too" commit on github
         auto tlasBuildRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
             .setPrimitiveCount(1) // 1 seul noeud dans notre TLAS pour l'instant (y'a 1 objet)
             .setFirstVertex(0)
@@ -1539,17 +1624,20 @@ namespace
 
     void createShaderStorageBufferObject()
     {
+        for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++) shouldUpdateSSBO[i] = false;
+
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        auto ee = Edit().setPos(sk::math::vec3(-0.5, 1., 0.));
+
+        // cool grey torus
+        auto ee = Edit().setPos(sk::math::vec3(-0.5, -0.3, 0.));
         ee.dimensions = sk::math::vec3(1.5, 1.5, 1.5);
         ee.type = 2;
-    
+        ee.mat.roughness = 0.0;
+        ee.mat.albedo = sk::math::vec3(1.);
         edits.push_back(ee);
-        // edits.push_back(Edit().setA().setB().[...])
 
-        computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
-        // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
+        computeBoundingBoxes();
         computeAllEditIntersections();
 
         size_t bufSize = edits.size() * sizeof(edits[0]);
@@ -1752,6 +1840,7 @@ void sk::end()
         device.freeMemory(rtImageMemories[f]);
         device.destroyImage(rtImages[f]);
     }
+    aabbsStagingBuffer.destroy();
     blasBuf.destroy();
     tlasBufs.destroy();
     device.destroyAccelerationStructureKHR(blasAccel);
@@ -1824,17 +1913,18 @@ void sk::draw(float t)
     // On reset le fence ment si on doit pas recréer la swap chain (évite une famine)
     device.resetFences(readyForNextFrameFences[currentFrame]);
 
-    if(shouldUpdateSSBO)
+    if(shouldUpdateSSBO[currentFrame])
     {
         computeBoundingBoxes();
         computeAllEditIntersections();
         ssbos[currentFrame].update();
-        shouldUpdateSSBO = false;
     }
 
     // Ensuite il faut record ce qu'on veut faire dans commandBuffer, pour l'image d'indice imgId
     // commandBuffers[currentFrame].reset();
     recordCommandBuffer(commandBuffers[currentFrame], currentSwapChainImage, t);
+
+    shouldUpdateSSBO[currentFrame] = false;
     
     // On voudra attendre le sémaphore imageAvailable au moment de la copie de rtImage sur swapChainImage
     vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eTransfer };
@@ -1888,7 +1978,7 @@ namespace sk::edit
     float           getRoughness(   const unsigned int i)   { return edits[i].mat.roughness; }
     math::vec3      getDimensions(  const unsigned int i)   { return edits[i].dimensions; }
 
-    void shouldUpdate() { shouldUpdateSSBO = true; }
+    void shouldUpdate() { for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++) shouldUpdateSSBO[i] = true; }
 
     unsigned int add(const int type__)
     { 

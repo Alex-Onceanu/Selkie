@@ -31,8 +31,11 @@ int main()
             if(elapsedTime >= 4.f and not event)
             {
                 event = true;
-                auto i = sk::edit::add(0);
+                auto i = sk::edit::add(1);
+                sk::edit::setDimensions(i, sk::math::vec3(1., 1., 1.));
+                sk::edit::setPos(i, sk::math::vec3(3.5, 1.3, 0.));
                 sk::edit::setAlbedo(i, sk::math::vec3(0., 1., 1.));
+                sk::edit::setRoughness(i, 1.);
                 std::cout << "Event !" << std::endl;
             }
 
