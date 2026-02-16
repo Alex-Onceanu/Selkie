@@ -81,33 +81,33 @@ namespace
     #define MAX_MERGES 8
     struct Edit {
         sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, 
-                    transform_l2{ 0.,1.,0.,0. }, 
-                    transform_l3{ 0.,0.,1.,0. };
-        Material    mat{};
-        int         type{}; // 0 = sphere, 1 = box, 2 = torus, 3 = capsule, 4 = cylinder, 5 = rounded cone
+                        transform_l2{ 0.,1.,0.,0. }, 
+                        transform_l3{ 0.,0.,1.,0. };
+        Material        mat{};
         sk::math::vec3  dimensions{ .5 };
-        float       rounding{};
+        int             type{}; // 0 = sphere, 1 = box, 2 = torus, 3 = capsule, 4 = cylinder, 5 = rounded cone
         sk::math::vec3  elongation{};
-        float       blendStrength = 9.;
+        float           rounding{};
         sk::math::vec3  scale{ 1. };
-        bool        negative = false;
+        float           blendStrength = 9.;
         sk::math::vec3  bend{};
-        float       onion{};
-        float       norm{};
-        float       twist{};
-        int         nbNeighbours = 0;
-        int         neighbours[MAX_MERGES];
+        bool            negative = false;
+        float           onion{};
+        float           norm{};
+        float           twist{};
+        int             nbNeighbours = 0;
+        int             neighbours[MAX_MERGES];
         // [...] remember to align to 16 bytes !
 
         Edit() = default;
         Edit& setPos(       const sk::math::vec3 pos_)      { transform_l1.w = pos_.x; transform_l2.w = pos_.y; transform_l3.w = pos_.z; return *this; }
         Edit& setRotation(  const sk::math::mat3 rot_)      { transform_l1 = sk::math::vec4(rot_.C1.x, rot_.C2.x, rot_.C3.x, transform_l1.w); 
-                                                          transform_l2 = sk::math::vec4(rot_.C1.y, rot_.C2.y, rot_.C3.y, transform_l2.w); 
-                                                          transform_l3 = sk::math::vec4(rot_.C1.z, rot_.C2.z, rot_.C3.z, transform_l3.w); return *this; }
-        Edit& addNeighbour( const int neighbour_)       { if(nbNeighbours < MAX_MERGES) neighbours[nbNeighbours++] = neighbour_; return *this; }
+                                                              transform_l2 = sk::math::vec4(rot_.C1.y, rot_.C2.y, rot_.C3.y, transform_l2.w); 
+                                                              transform_l3 = sk::math::vec4(rot_.C1.z, rot_.C2.z, rot_.C3.z, transform_l3.w); return *this; }
+        Edit& addNeighbour( const int neighbour_)           { if(nbNeighbours < MAX_MERGES) neighbours[nbNeighbours++] = neighbour_; return *this; }
 
-        inline sk::math::vec3 getPos() const                       { return sk::math::vec3(transform_l1.w, transform_l2.w, transform_l3.w); }
-        inline sk::math::mat3 getRotation() const                  { return sk::math::mat3(transform_l1.xyz(), transform_l2.xyz(), transform_l3.xyz()); }
+        inline sk::math::vec3 getPos() const                { return sk::math::vec3(transform_l1.w, transform_l2.w, transform_l3.w); }
+        inline sk::math::mat3 getRotation() const           { return sk::math::mat3(transform_l1.xyz(), transform_l2.xyz(), transform_l3.xyz()); }
     };
 
     class SSBO;
@@ -1406,6 +1406,7 @@ namespace
 
     void computeBoundingBoxes()
     {
+        editsBoundingBoxes.clear();
         for(const auto& e : edits)
         {
             sk::math::vec3 p = e.getPos();
@@ -1483,10 +1484,15 @@ namespace
 
     void computeAllEditIntersections()
     {
-        float cx = camPos.x * cosf(0.1 * 16.) + camPos.z * -sinf(0.1 * 16.);
-        float cz = camPos.x * sinf(0.1 * 16.) + camPos.z * cosf(0.1 * 16.);
-        camPos.x = cx;
-        camPos.z = cz;
+        // float cx = camPos.x * cosf(0.1 * 16.) + camPos.z * -sinf(0.1 * 16.);
+        // float cz = camPos.x * sinf(0.1 * 16.) + camPos.z * cosf(0.1 * 16.);
+        // camPos.x = cx;
+        // camPos.z = cz;
+
+        for(auto& e : edits)
+        {
+            e.nbNeighbours = 0;
+        }
 
         // naïve O(n²) approach for now
         for(int i = 0; i < edits.size(); i++)
@@ -1535,7 +1541,11 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-
+        auto ee = Edit().setPos(sk::math::vec3(-0.5, 1., 0.));
+        ee.dimensions = sk::math::vec3(1.5, 1.5, 1.5);
+        ee.type = 2;
+    
+        edits.push_back(ee);
         // edits.push_back(Edit().setA().setB().[...])
 
         computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
@@ -1816,6 +1826,8 @@ void sk::draw(float t)
 
     if(shouldUpdateSSBO)
     {
+        computeBoundingBoxes();
+        computeAllEditIntersections();
         ssbos[currentFrame].update();
         shouldUpdateSSBO = false;
     }

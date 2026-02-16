@@ -33,6 +33,7 @@ int main()
                 event = true;
                 auto i = sk::edit::add(0);
                 sk::edit::setAlbedo(i, sk::math::vec3(0., 1., 1.));
+                std::cout << "Event !" << std::endl;
             }
 
             sk::draw(elapsedTime);

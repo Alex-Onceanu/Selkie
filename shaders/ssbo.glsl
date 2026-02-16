@@ -15,14 +15,14 @@ struct edit_t {
                 transform_l2, 
                 transform_l3;
     material_t  material;
-    int         type;
     vec3        dimensions;
-    float       rounding;
+    int         type;
     vec3        elongation;
-    float       blendStrength;
+    float       rounding;
     vec3        scale;
-    bool        negative;
+    float       blendStrength;
     vec3        bend;
+    bool        negative;
     float       onion;
     float       norm;
     float       twist;

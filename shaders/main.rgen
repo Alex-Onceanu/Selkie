@@ -1,8 +1,10 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_debug_printf : enable
 
 #include "constants.glsl"
 #include "main_payload.glsl"
+#include "ssbo.glsl"
 
 layout(location = 0) rayPayloadEXT payload_t payload;
 
@@ -18,10 +20,12 @@ void main()
 
     vec3 cameraPos = vec3(0., 2.0, 14.);
     vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * FOV));
-    cameraPos.xz *= rot2D(0.1 * 16.);
-    rayDir.xz *= rot2D(0.1 * 16.);
+    // cameraPos.xz *= rot2D(0.1 * 16.);
+    // rayDir.xz *= rot2D(0.1 * 16.);
 
     payload.mirrorRay = false;
+
+    // debugPrintfEXT("Edit 0 : pos = %f %f %f, albedo = %f %f %f, type = %d, nbNeighbours = %d", getPos(0).x, getPos(0).y, getPos(0).z, ssbo.edits[0].material.albedo.x, ssbo.edits[0].material.albedo.y, ssbo.edits[0].material.albedo.z, ssbo.edits[0].type, ssbo.edits[0].nbNeighbours);
 
     /*  void traceRayEXT(accelerationStructureEXT topLevel,
             uint rayFlags,
