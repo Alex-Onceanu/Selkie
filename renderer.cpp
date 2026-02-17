@@ -80,7 +80,7 @@ namespace
     // Should be a multiple of 4 for gpu memory alignment !!!
     #define MAX_MERGES 8
     struct Edit {
-        sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, 
+        sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, // is actually the inverse of the model matrix
                         transform_l2{ 0.,1.,0.,0. }, 
                         transform_l3{ 0.,0.,1.,0. };
         Material        mat{};
@@ -100,14 +100,30 @@ namespace
         // [...] remember to align to 16 bytes !
 
         Edit() = default;
-        Edit& setPos(       const sk::math::vec3 pos_)      { transform_l1.w = -pos_.x; transform_l2.w = -pos_.y; transform_l3.w = -pos_.z; return *this; }
-        Edit& setRotation(  const sk::math::mat3 rot_)      { transform_l1 = sk::math::vec4(rot_.C1.x, rot_.C2.x, rot_.C3.x, transform_l1.w); 
-                                                              transform_l2 = sk::math::vec4(rot_.C1.y, rot_.C2.y, rot_.C3.y, transform_l2.w); 
-                                                              transform_l3 = sk::math::vec4(rot_.C1.z, rot_.C2.z, rot_.C3.z, transform_l3.w); return *this; }
+        inline sk::math::mat3 getRotation() const           { return sk::math::mat3(transform_l1.xyz(), transform_l2.xyz(), transform_l3.xyz()); }
+        inline sk::math::vec3 getPos() const                { return getRotation() * sk::math::vec3(-transform_l1.w, -transform_l2.w, -transform_l3.w); }
+
+        Edit& setPos(const sk::math::vec3 pos_)
+        {
+            // the translation part of the inverse of model matrix must be multiplied by inverse rotation first
+            sk::math::vec3 inverseTranslation = sk::math::vec3(transform_l1.xyz().dot(pos_), transform_l2.xyz().dot(pos_), transform_l3.xyz().dot(pos_));
+            transform_l1.w = -inverseTranslation.x;
+            transform_l2.w = -inverseTranslation.y;
+            transform_l3.w = -inverseTranslation.z;
+            return *this;
+        }
+
+        Edit& setRotation(const sk::math::mat3 rot_)
+        {
+            // actually set it to transpose(rot_)
+            transform_l1 = sk::math::vec4(rot_.C1, transform_l1.w); 
+            transform_l2 = sk::math::vec4(rot_.C2, transform_l2.w); 
+            transform_l3 = sk::math::vec4(rot_.C3, transform_l3.w);
+            return *this; 
+        }
+
         Edit& addNeighbour( const int neighbour_)           { if(nbNeighbours < MAX_MERGES) neighbours[nbNeighbours++] = neighbour_; return *this; }
 
-        inline sk::math::vec3 getPos() const                { return sk::math::vec3(transform_l1.w, transform_l2.w, transform_l3.w); }
-        inline sk::math::mat3 getRotation() const           { return sk::math::mat3(transform_l1.xyz(), transform_l2.xyz(), transform_l3.xyz()); }
     };
 
     class SSBO;
@@ -174,7 +190,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
-    sk::math::vec3 camPos(0., 2., 14.);
+    sk::math::vec3 camPos(0., 2., 16.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<SSBO> ssbos{};
@@ -1489,12 +1505,22 @@ namespace
         tlasDescInfo.setAccelerationStructures(tlasAccel);
     }
 
+    /*
+    
+    for i<3u:
+        a = M[i][j] * A.min[j]
+        b = M[i][j] * A.max[j]
+        B.min[i] += a < b ? a : b
+        B.max[i] += a < b ? b : a
+    
+    */
+
     void computeBoundingBoxes()
     {
         editsBoundingBoxes.clear();
         for(const auto& e : edits)
         {
-            sk::math::vec3 p = -e.getPos();
+            sk::math::vec3 p = e.getPos();
             sk::math::vec3 s;
 
             // different bounding box for each primitive type
@@ -1519,7 +1545,21 @@ namespace
                 s = sk::math::vec3(std::max(e.dimensions.x, e.dimensions.y), e.dimensions.z, std::max(e.dimensions.x, e.dimensions.y));
                 break;
             }
-            editsBoundingBoxes.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
+
+            float mc[9];
+            e.getRotation().coefs(mc);
+
+            float new_s[3];
+            for (int i = 0; i < 3; ++i) {
+                new_s[i] =  std::abs(mc[3 * i + 0]) * s.x + 
+                            std::abs(mc[3 * i + 1]) * s.y + 
+                            std::abs(mc[3 * i + 2]) * s.z;
+            }
+
+            editsBoundingBoxes.push_back({
+                p.x - new_s[0], p.y - new_s[1], p.z - new_s[2],
+                p.x + new_s[0], p.y + new_s[1], p.z + new_s[2]
+            });
         }
     }
 
@@ -1631,12 +1671,11 @@ namespace
 
         // cool grey torus
         auto ee = Edit().setPos(sk::math::vec3(-0.5, -0.1, 0.));
-        ee.dimensions = sk::math::vec3(1.5, 1.5, 1.5);
-        ee.type = 2;
-        ee.mat.roughness = 0.0;
+        ee.dimensions = sk::math::vec3(1.5, 0.5, 0.5);
+        ee.type = 1;
+        ee.mat.roughness = 1.0;
         ee.mat.albedo = sk::math::vec3(1.);
         edits.push_back(ee);
-        ee.setRotation(sk::math::Quaternion(sk::math::vec3(0., 1., 1.), 3.1415 / 4.f).normalized().toMatrix());
 
         computeBoundingBoxes();
         computeAllEditIntersections();

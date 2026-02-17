@@ -44,7 +44,8 @@ int main()
             // }
             // if(elapsedTime >= 4.f)
             // {
-            sk::edit::setRotation(0, sk::math::mat3::rotation(sk::math::vec3(0., 1., 1.), 0.5 * elapsedTime));
+            sk::edit::setRotation(0, sk::math::mat3::rotation(sk::math::vec3(0., 1., 1.), 0.7 * elapsedTime));
+            sk::edit::setPos(0, sk::math::vec3(5., 0., 0.));
             // }
 
             sk::draw(elapsedTime);

@@ -50,12 +50,6 @@ float shadowRay(const vec3 ro, const vec3 rd)
     return min(max(shadowPayload.shadow, AMBIENT_INTENSITY), 1.);
 }
 
-// vec3 mirrorRay(const vec3 ro, const vec3 rd)
-// {
-//     traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 2, 0, ro + 0.1 * rd, T_MIN, rd, T_MAX, 0);
-//     return payload.hitColor;
-// }
-
 vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 lightPos)
 {
     // return 0.5 * normal + vec3(0.5);
@@ -76,8 +70,11 @@ vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 l
 
 void main()
 {
-    // payload.hitColor = vec3(1., 0., 0.);
-    // return;
+    if(gl_HitKindEXT == 129)
+    {
+        payload.hitColor = vec3(1., 0., 0.);
+        return;
+    }
     const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
     vec3 lp = LIGHTPOS;
     lp.xz *= rot2D(-2.7 * time);

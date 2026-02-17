@@ -42,7 +42,8 @@ namespace sk::math
         float x = 0.f, y = 0.f, z = 0.f, w = 0.f;
 
         vec4() = default;
-        vec4(float __x, float __y, float __z, float __w) { x = __x; y = __y; z = __z; w = __w; };
+        vec4(const float x__, const float y__, const float z__, const float w__) { x = x__, y = y__, z = z__, w = w__; };
+        vec4(const vec3 xyz__, const float w__) { x = xyz__.x, y = xyz__.y, z = xyz__.z, w = w__; }
 
         vec3 xyz() const { return math::vec3(x, y, z); }
     };

@@ -13,12 +13,22 @@ hitAttributeEXT vec3 normal;
 float map(const vec3 p)
 {
     edit_t ed = ssbo.edits[gl_PrimitiveID];
-    float sum = exp2(-sdf(p, ed.type, ed.dimensions, transpose(mat4(ed.transform_l1, ed.transform_l2, ed.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
+    float firstDist = sdf(p, ed.type, ed.dimensions, mat4(ed.transform_l1.x, ed.transform_l1.y, ed.transform_l1.z, ed.transform_l1.w,
+                                                          ed.transform_l2.x, ed.transform_l2.y, ed.transform_l2.z, ed.transform_l2.w,
+                                                          ed.transform_l3.x, ed.transform_l3.y, ed.transform_l3.z, ed.transform_l3.w,
+                                                          0., 0., 0., 1.));
+    if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0) return firstDist;
+
+    float sum = exp2(-firstDist * BLEND_STRENGTH);
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
         edit_t ee = ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]];
-        sum += exp2(-sdf(p, ee.type, ee.dimensions, transpose(mat4(ee.transform_l1, ee.transform_l2, ee.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
+        sum += exp2(-sdf(p, ee.type, ee.dimensions, mat4(ee.transform_l1.x, ee.transform_l1.y, ee.transform_l1.z, ee.transform_l1.w,
+                                                         ee.transform_l2.x, ee.transform_l2.y, ee.transform_l2.z, ee.transform_l2.w,
+                                                         ee.transform_l3.x, ee.transform_l3.y, ee.transform_l3.z, ee.transform_l3.w,
+                                                         0., 0., 0., 1.)) * BLEND_STRENGTH);
     }
+    
     return -log2(sum) / BLEND_STRENGTH;
 }
 
@@ -37,8 +47,6 @@ void main()
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
     // debugPrintfEXT("Type = %d, Dims = %f %f %f, pos = %f %f %f", ssbo.edits[gl_PrimitiveID].type, ssbo.edits[gl_PrimitiveID].dimensions.x, ssbo.edits[gl_PrimitiveID].dimensions.y, ssbo.edits[gl_PrimitiveID].dimensions.z, getPos(gl_PrimitiveID).x, getPos(gl_PrimitiveID).y, getPos(gl_PrimitiveID).z);
-    // reportIntersectionEXT(1., 0U);
-    // return;
     // debugPrintfEXT("l1 = %f %f %f %f, l3 = %f %f %f %f", ssbo.edits[0].transform_l1.x, ssbo.edits[0].transform_l1.y, ssbo.edits[0].transform_l1.z, ssbo.edits[0].transform_l1.w, ssbo.edits[0].transform_l3.x, ssbo.edits[0].transform_l3.y, ssbo.edits[0].transform_l3.z, ssbo.edits[0].transform_l3.w);
 
     float t = 0.;
@@ -46,15 +54,17 @@ void main()
     {
         float safeDist = map(p);
 
-        if(t > gl_RayTmaxEXT)
+        if(t + safeDist > gl_RayTmaxEXT)
         {
+            normal = vec3(0., 1., 0.);
+            reportIntersectionEXT(1., 129);
             return;
         }
 
         if(safeDist <= gl_RayTminEXT)
         {
             normal = computeNormal(p);
-            reportIntersectionEXT(t, 0U);
+            reportIntersectionEXT(t, 0);
             return;
         }
 
