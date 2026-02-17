@@ -44,7 +44,7 @@ int main()
             // }
             // if(elapsedTime >= 4.f)
             // {
-                // sk::edit::setRotation(0, sk::math::Quaternion(sk::math::vec3(0., 0., 1.), 0.05 * elapsedTime).toMatrix());
+            sk::edit::setRotation(0, sk::math::mat3::rotation(sk::math::vec3(0., 1., 1.), 0.5 * elapsedTime));
             // }
 
             sk::draw(elapsedTime);
