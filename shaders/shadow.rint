@@ -12,12 +12,12 @@ hitAttributeEXT float shadow;
 // computes n-ary exponential smooth minimum
 float map(const vec3 p)
 {
-    float sum = exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].type, getPos(gl_PrimitiveID), ssbo.edits[gl_PrimitiveID].dimensions) * BLEND_STRENGTH);
+    edit_t ed = ssbo.edits[gl_PrimitiveID];
+    float sum = exp2(-sdf(p, ed.type, ed.dimensions, transpose(mat4(ed.transform_l1, ed.transform_l2, ed.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
-        sum += exp2(-sdf(p, ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].type,
-                            getPos(ssbo.edits[gl_PrimitiveID].neighbours[e]),
-                            ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].dimensions) * BLEND_STRENGTH);
+        edit_t ee = ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]];
+        sum += exp2(-sdf(p, ee.type, ee.dimensions, transpose(mat4(ee.transform_l1, ee.transform_l2, ee.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
     }
     return -log2(sum) / BLEND_STRENGTH;
 }

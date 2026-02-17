@@ -101,7 +101,7 @@ namespace sk::math
         vec3 w{};
 
         Quaternion(const float s_, const vec3& w_) : s(s_), w(w_) {}
-        Quaternion(const vec3& axis, const float angle)
+        Quaternion(const vec3 axis, const float angle)
         {
             s = cosf(angle / 2.f);
             w = axis * sinf(angle / 2.f);

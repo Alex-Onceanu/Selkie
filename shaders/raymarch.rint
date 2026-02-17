@@ -12,12 +12,12 @@ hitAttributeEXT vec3 normal;
 // computes n-ary exponential smooth minimum
 float map(const vec3 p)
 {
-    float sum = exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].type, getPos(gl_PrimitiveID), ssbo.edits[gl_PrimitiveID].dimensions) * BLEND_STRENGTH);
+    edit_t ed = ssbo.edits[gl_PrimitiveID];
+    float sum = exp2(-sdf(p, ed.type, ed.dimensions, transpose(mat4(ed.transform_l1, ed.transform_l2, ed.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
-        sum += exp2(-sdf(p, ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].type,
-                            getPos(ssbo.edits[gl_PrimitiveID].neighbours[e]),
-                            ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].dimensions) * BLEND_STRENGTH);
+        edit_t ee = ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]];
+        sum += exp2(-sdf(p, ee.type, ee.dimensions, transpose(mat4(ee.transform_l1, ee.transform_l2, ee.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
     }
     return -log2(sum) / BLEND_STRENGTH;
 }
@@ -39,6 +39,7 @@ void main()
     // debugPrintfEXT("Type = %d, Dims = %f %f %f, pos = %f %f %f", ssbo.edits[gl_PrimitiveID].type, ssbo.edits[gl_PrimitiveID].dimensions.x, ssbo.edits[gl_PrimitiveID].dimensions.y, ssbo.edits[gl_PrimitiveID].dimensions.z, getPos(gl_PrimitiveID).x, getPos(gl_PrimitiveID).y, getPos(gl_PrimitiveID).z);
     // reportIntersectionEXT(1., 0U);
     // return;
+    // debugPrintfEXT("l1 = %f %f %f %f, l3 = %f %f %f %f", ssbo.edits[0].transform_l1.x, ssbo.edits[0].transform_l1.y, ssbo.edits[0].transform_l1.z, ssbo.edits[0].transform_l1.w, ssbo.edits[0].transform_l3.x, ssbo.edits[0].transform_l3.y, ssbo.edits[0].transform_l3.z, ssbo.edits[0].transform_l3.w);
 
     float t = 0.;
     for(int i = 0; i < MAX_IT; i++)

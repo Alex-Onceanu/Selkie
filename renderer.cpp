@@ -100,7 +100,7 @@ namespace
         // [...] remember to align to 16 bytes !
 
         Edit() = default;
-        Edit& setPos(       const sk::math::vec3 pos_)      { transform_l1.w = pos_.x; transform_l2.w = pos_.y; transform_l3.w = pos_.z; return *this; }
+        Edit& setPos(       const sk::math::vec3 pos_)      { transform_l1.w = -pos_.x; transform_l2.w = -pos_.y; transform_l3.w = -pos_.z; return *this; }
         Edit& setRotation(  const sk::math::mat3 rot_)      { transform_l1 = sk::math::vec4(rot_.C1.x, rot_.C2.x, rot_.C3.x, transform_l1.w); 
                                                               transform_l2 = sk::math::vec4(rot_.C1.y, rot_.C2.y, rot_.C3.y, transform_l2.w); 
                                                               transform_l3 = sk::math::vec4(rot_.C1.z, rot_.C2.z, rot_.C3.z, transform_l3.w); return *this; }
@@ -1494,7 +1494,7 @@ namespace
         editsBoundingBoxes.clear();
         for(const auto& e : edits)
         {
-            sk::math::vec3 p = e.getPos();
+            sk::math::vec3 p = -e.getPos();
             sk::math::vec3 s;
 
             // different bounding box for each primitive type
@@ -1630,12 +1630,13 @@ namespace
         edits.clear();
 
         // cool grey torus
-        auto ee = Edit().setPos(sk::math::vec3(-0.5, -0.3, 0.));
+        auto ee = Edit().setPos(sk::math::vec3(-0.5, -0.1, 0.));
         ee.dimensions = sk::math::vec3(1.5, 1.5, 1.5);
         ee.type = 2;
         ee.mat.roughness = 0.0;
         ee.mat.albedo = sk::math::vec3(1.);
         edits.push_back(ee);
+        ee.setRotation(sk::math::Quaternion(sk::math::vec3(0., 1., 1.), 3.1415 / 4.f).normalized().toMatrix());
 
         computeBoundingBoxes();
         computeAllEditIntersections();
@@ -1909,6 +1910,8 @@ void sk::draw(float t)
         recreateSwapChain();
         return;
     }
+
+    // std::cout << "Frame : " << currentFrame << ", should update = " << shouldUpdateSSBO[currentFrame] << std::endl; 
     
     // On reset le fence ment si on doit pas recréer la swap chain (évite une famine)
     device.resetFences(readyForNextFrameFences[currentFrame]);

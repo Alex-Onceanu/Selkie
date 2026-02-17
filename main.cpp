@@ -28,16 +28,24 @@ int main()
                 prevTime = currentTime;
             }
 
-            if(elapsedTime >= 4.f and not event)
-            {
-                event = true;
-                auto i = sk::edit::add(1);
-                sk::edit::setDimensions(i, sk::math::vec3(1., 1., 1.));
-                sk::edit::setPos(i, sk::math::vec3(3.5, 1.3, 0.));
-                sk::edit::setAlbedo(i, sk::math::vec3(0., 1., 1.));
-                sk::edit::setRoughness(i, 1.);
-                std::cout << "Event !" << std::endl;
-            }
+            // sk::edit::setPos(0, sk::math::vec3(sinf(elapsedTime), 0.f, 0.f));
+
+            // int i;
+            // if(elapsedTime >= 4.f and not event)
+            // {
+            //     event = true;
+            //     i = sk::edit::add(1);
+            //     sk::edit::setDimensions(i, sk::math::vec3(1., 1., 1.));
+            //     sk::edit::setPos(i, sk::math::vec3(3.6, 1.4, 0.));
+            //     sk::edit::setAlbedo(i, sk::math::vec3(0., 1., 1.));
+            //     sk::edit::setRoughness(i, 1.);
+            //     sk::edit::setRotation(i, sk::math::Quaternion(sk::math::vec3(0., 1., 1.), 0.2 * elapsedTime).normalized().toMatrix());
+            //     std::cout << "Event !" << std::endl;
+            // }
+            // if(elapsedTime >= 4.f)
+            // {
+                // sk::edit::setRotation(0, sk::math::Quaternion(sk::math::vec3(0., 0., 1.), 0.05 * elapsedTime).toMatrix());
+            // }
 
             sk::draw(elapsedTime);
             nbFrames++;
