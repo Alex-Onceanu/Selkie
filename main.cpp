@@ -14,6 +14,12 @@ int main()
         auto prevTime = startTime;
         bool event = false;
 
+        sk::edit::add(1);
+        sk::edit::setPos(1, sk::math::vec3(5.0, -2.3, 0.));
+        sk::edit::setAlbedo(1, sk::math::vec3(0.5, 0.3, 0.7));
+        sk::edit::setDimensions(1, sk::math::vec3(4.5, 0.75, 4.5));
+
+
         int nbFrames = 0;
         while(window->isAlive())
         {

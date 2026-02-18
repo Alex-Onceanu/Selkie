@@ -85,16 +85,16 @@ namespace
                         transform_l3{ 0.,0.,1.,0. };
         Material        mat{};
         sk::math::vec3  dimensions{ .5 };
-        int             type{}; // 0 = sphere, 1 = box, 2 = torus, 3 = capsule, 4 = cylinder, 5 = rounded cone
-        sk::math::vec3  elongation{};
-        float           rounding{};
-        sk::math::vec3  scale{ 1. };
+        int             type = 0; // 0 = sphere, 1 = box, 2 = torus, 3 = capsule, 4 = cylinder, 5 = rounded cone
+        sk::math::vec3  elongation{ 0. };
+        float           rounding = 0.;
+        float           scale = 1.;
+        float           onion = 0.;
         float           blendStrength = 9.;
-        sk::math::vec3  bend{};
         bool            negative = false;
-        float           onion{};
-        float           norm{};
-        float           twist{};
+        float           bend = 0.;
+        float           norm = 2.;
+        float           twist = 0.;
         int             nbNeighbours = 0;
         int             neighbours[MAX_MERGES];
         // [...] remember to align to 16 bytes !
@@ -1670,11 +1670,12 @@ namespace
         edits.clear();
 
         // cool grey torus
-        auto ee = Edit().setPos(sk::math::vec3(-0.5, -0.1, 0.));
+        auto ee = Edit();
         ee.dimensions = sk::math::vec3(1.5, 0.5, 0.5);
-        ee.type = 1;
+        ee.type = 4;
+        ee.norm = 2;
         ee.mat.roughness = 1.0;
-        ee.mat.albedo = sk::math::vec3(1.);
+        ee.mat.albedo = sk::math::vec3(0.4, 1., 1.);
         edits.push_back(ee);
 
         computeBoundingBoxes();
@@ -2038,9 +2039,9 @@ namespace sk::edit
     void setRounding(       const unsigned int i, const float v)        { shouldUpdate(); edits[i].rounding = v; }        
     void setElongation(     const unsigned int i, const math::vec3 v)   { shouldUpdate(); edits[i].elongation = v; }
     void setBlendStrength(  const unsigned int i, const float v)        { shouldUpdate(); edits[i].blendStrength = v; }
-    void setScale(          const unsigned int i, const math::vec3 v)   { shouldUpdate(); edits[i].scale = v; }
+    void setScale(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].scale = v; }
     void setNegative(       const unsigned int i, const bool v)         { shouldUpdate(); edits[i].negative = v; }
-    void setBend(           const unsigned int i, const math::vec3 v)   { shouldUpdate(); edits[i].bend = v; }
+    void setBend(           const unsigned int i, const float v)        { shouldUpdate(); edits[i].bend = v; }
     void setOnion(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].onion = v; }
     void setNorm(           const unsigned int i, const float v)        { shouldUpdate(); edits[i].norm = v; }
     void setTwist(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].twist = v; }

@@ -19,16 +19,15 @@ struct edit_t {
     int         type;
     vec3        elongation;
     float       rounding;
-    vec3        scale;
-    float       blendStrength;
-    vec3        bend;
-    bool        negative;
+    float       scale;
     float       onion;
+    float       blendStrength;
+    bool        negative;
+    float       bend;
     float       norm;
     float       twist;
     int         nbNeighbours;
     int         neighbours[MAX_MERGES];
-    // Should be aligned to 48 bytes (12 + 4 + 16 + 12 + 4 = 48 + MAX_MERGES * 4)
 };
 
 layout(set = 0, binding = 2, std430) buffer ssbo_t {

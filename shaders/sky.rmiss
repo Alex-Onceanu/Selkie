@@ -56,7 +56,7 @@ vec2 inverseSF( vec3 p )
 
 vec3 skyColor(vec3 d)
 {
-    return mix(vec3(0.3, 0.5, 0.9), vec3(0.9), abs(d.y));
+    // return mix(vec3(0.3, 0.5, 0.9), vec3(0.9), abs(d.y));
 
     float starsDisplacement = 0.069;
     float starSize = 2000;

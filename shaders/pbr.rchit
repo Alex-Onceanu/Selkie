@@ -21,7 +21,7 @@ material_t blendMaterial(const vec3 p)
     material_t mat;
 
     edit_t ed = ssbo.edits[gl_PrimitiveID];
-    float a_e = exp2(-sdf(p, ed.type, ed.dimensions, transpose(mat4(ed.transform_l1, ed.transform_l2, ed.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
+    float a_e = exp2(-sdf(p, gl_PrimitiveID) * BLEND_STRENGTH);
     mat.albedo = ed.material.albedo * a_e;
     mat.roughness = ed.material.roughness * a_e;
     float sum = a_e;
@@ -30,7 +30,7 @@ material_t blendMaterial(const vec3 p)
     for(int e = 0; e < n; e++)
     {
         ed = ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]];
-        a_e = exp2(-sdf(p, ed.type, ed.dimensions, transpose(mat4(ed.transform_l1, ed.transform_l2, ed.transform_l3, vec4(0., 0., 0., 1.)))) * BLEND_STRENGTH);
+        a_e = exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]) * BLEND_STRENGTH);
 
         mat.albedo += ed.material.albedo * a_e;
         mat.roughness += ed.material.roughness * a_e;
@@ -45,7 +45,7 @@ material_t blendMaterial(const vec3 p)
 float shadowRay(const vec3 ro, const vec3 rd)
 {
     shadowPayload.shadow = 1.;
-    traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 1, 2, 1, ro + 0.01 * normal, T_MIN, rd, T_MAX, 1);
+    traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 1, 2, 1, ro, T_MIN, rd, T_MAX, 1);
 
     return min(max(shadowPayload.shadow, AMBIENT_INTENSITY), 1.);
 }
@@ -70,13 +70,8 @@ vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 l
 
 void main()
 {
-    if(gl_HitKindEXT == 129)
-    {
-        payload.hitColor = vec3(1., 0., 0.);
-        return;
-    }
     const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
     vec3 lp = LIGHTPOS;
-    lp.xz *= rot2D(-2.7 * time);
+    // lp.xz *= rot2D(-2.7 * time);
     payload.hitColor = sphereColor(p, gl_WorldRayDirectionEXT, blendMaterial(p), lp);
 }
