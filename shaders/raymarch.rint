@@ -11,51 +11,48 @@ hitAttributeEXT vec3 normal;
 // float map(const vec3 p, const float blend)
 // {
 //     float firstDist = sdf(p, gl_PrimitiveID);
-//     if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0)
-//         return ssbo.edits[gl_PrimitiveID].negative ? (1. / 0.) : firstDist;
+//     // if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0)
+//     //     return ssbo.edits[gl_PrimitiveID].negative ? (1. / 0.) : firstDist;
 
 //     float sum = ssbo.edits[gl_PrimitiveID].negative ? 0. : exp2(-firstDist * blend);
-//     float negsum = !ssbo.edits[gl_PrimitiveID].negative ? 0. : exp2(firstDist * blend);
+//     float negsum = !ssbo.edits[gl_PrimitiveID].negative ? 0. : exp2(-firstDist * blend);
 //     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
 //     {
-//         if(!ssbo.edits[gl_PrimitiveID].negative)
-//             sum += exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]) * blend);
+//         float d = sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]);
+//         if(!ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].negative)
+//             sum += exp2(-d * blend);
 //         else 
-//             negsum += exp2(sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]) * blend);
+//             negsum += exp2(-d * blend);
 //     }
-//     if(sum <= 1e-4) return -log2(sum) / blend;
-//     return -log2(negsum / sum) / blend;
+//     sum = -log2(sum) / blend;
+//     negsum = -log2(negsum) / blend;
+
+//     // smooth substraction of (smooth union of positives) by (smooth union of negatives)
+//     return log2(exp2(sum * blend) + exp2(-negsum * blend)) / blend;
 // }
 
-// returns distance to the closest object in the scene
-// computes n-ary exponential smooth minimum
 float map(const vec3 p, const float blend)
 {
-    float firstDist = -sdf(p, gl_PrimitiveID);
-    if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0)
-        return ssbo.edits[gl_PrimitiveID].negative ? (1. / 0.) : -firstDist;
+    float d0 = sdf(p, gl_PrimitiveID);
+    bool isRootNeg = ssbo.edits[gl_PrimitiveID].negative;
 
-    int nbNegatives = 0;
-    if(ssbo.edits[gl_PrimitiveID].negative)
-    {
-        // nbNegatives++;
-        firstDist = -firstDist;
-    }
-    else nbNegatives++;
-    float sum = exp2(-firstDist * blend);
+    float sum = isRootNeg ? 0. : 1.0;
+    float negsum = !isRootNeg ? 0. : 1.0;
+
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
-        float d = -sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]);
-        if(!ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].negative)
-        {
-            // nbNegatives++;
-            d = -d;
-        }
-        else nbNegatives++;
-        sum += exp2(d * blend);
+        int id = ssbo.edits[gl_PrimitiveID].neighbours[e];
+        float d = sdf(p, id);
+
+        if(!ssbo.edits[id].negative) sum += exp2((d0 - d) * blend);
+        else                         negsum += exp2((d0 - d) * blend);
     }
 
-    return (nbNegatives % 2 == 0 ? 1. : -1.) * log2(sum) / blend;
+    float p_u = d0 - log2(max(1e-10, sum)) / blend;
+    float n_u = d0 - log2(max(1e-10, negsum)) / blend;
+
+    float m = max(p_u, -n_u);
+    return m + log2(exp2((p_u - m) * blend) + exp2((-n_u - m) * blend)) / blend;
 }
 
 // central differences

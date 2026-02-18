@@ -18,8 +18,8 @@ int main()
         sk::edit::setPos(1, sk::math::vec3(5.0, -2.3, 0.));
         sk::edit::setAlbedo(1, sk::math::vec3(0.5, 0.3, 0.7));
         sk::edit::setDimensions(1, sk::math::vec3(4.5, 0.75, 4.5));
-        sk::edit::setNegative(0, true);
-        sk::edit::setNegative(1, false);
+        sk::edit::setNegative(0, false);
+        sk::edit::setNegative(1, true);
         // sk::edit::setBlendStrength(0, 20);
 
 
