@@ -10,18 +10,31 @@ hitAttributeEXT float shadow;
 
 // returns distance to the closest object in the scene
 // computes n-ary exponential smooth minimum
-float map(const vec3 p)
+float map(const vec3 p, const float blend)
 {
     float firstDist = sdf(p, gl_PrimitiveID);
-    if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0) return firstDist;
+    if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0)
+        return ssbo.edits[gl_PrimitiveID].negative ? (1. / 0.) : firstDist;
 
-    float sum = exp2(-firstDist * BLEND_STRENGTH);
+    bool atLeastOneNegative = false;
+    if(!ssbo.edits[gl_PrimitiveID].negative)
+    {
+        atLeastOneNegative = true;
+        firstDist = -firstDist;
+    }
+    float sum = exp2(-firstDist * blend);
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
-        sum += exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]) * BLEND_STRENGTH);
+        float d = sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]);
+        if(!ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].negative)
+        {
+            atLeastOneNegative = true;
+            d = -d;
+        }
+        sum += exp2(-d * blend);
     }
     
-    return -log2(sum) / BLEND_STRENGTH;
+    return (atLeastOneNegative ? 1. : -1.) * log2(sum) / blend;
 }
 
 #define SHADOW_SOFTNESS 64
@@ -30,11 +43,18 @@ void main()
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
 
+
+    float blend = ssbo.edits[gl_PrimitiveID].blendStrength;
+    for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
+    {
+        blend = max(blend, ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].blendStrength);
+    }
+
     float t = 0.01; p += t * rd;
     shadow = 1.;
     for(int i = 0; i < MAX_IT; i++)
     {
-        float safeDist = map(p);
+        float safeDist = map(p, blend);
 
         shadow = min(shadow, SHADOW_SOFTNESS * safeDist / t);
 

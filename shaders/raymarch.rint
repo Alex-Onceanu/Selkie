@@ -8,32 +8,64 @@
 
 hitAttributeEXT vec3 normal;
 
+// float map(const vec3 p, const float blend)
+// {
+//     float firstDist = sdf(p, gl_PrimitiveID);
+//     if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0)
+//         return ssbo.edits[gl_PrimitiveID].negative ? (1. / 0.) : firstDist;
+
+//     float sum = ssbo.edits[gl_PrimitiveID].negative ? 0. : exp2(-firstDist * blend);
+//     float negsum = !ssbo.edits[gl_PrimitiveID].negative ? 0. : exp2(firstDist * blend);
+//     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
+//     {
+//         if(!ssbo.edits[gl_PrimitiveID].negative)
+//             sum += exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]) * blend);
+//         else 
+//             negsum += exp2(sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]) * blend);
+//     }
+//     if(sum <= 1e-4) return -log2(sum) / blend;
+//     return -log2(negsum / sum) / blend;
+// }
+
 // returns distance to the closest object in the scene
 // computes n-ary exponential smooth minimum
-float map(const vec3 p)
+float map(const vec3 p, const float blend)
 {
-    
-    float firstDist = sdf(p, gl_PrimitiveID);
-    if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0) return firstDist;
+    float firstDist = -sdf(p, gl_PrimitiveID);
+    if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0)
+        return ssbo.edits[gl_PrimitiveID].negative ? (1. / 0.) : -firstDist;
 
-    float sum = exp2(-firstDist * BLEND_STRENGTH);
+    int nbNegatives = 0;
+    if(ssbo.edits[gl_PrimitiveID].negative)
+    {
+        // nbNegatives++;
+        firstDist = -firstDist;
+    }
+    else nbNegatives++;
+    float sum = exp2(-firstDist * blend);
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
-        edit_t ee = ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]];
-        sum += exp2(-sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]) * BLEND_STRENGTH);
+        float d = -sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]);
+        if(!ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].negative)
+        {
+            // nbNegatives++;
+            d = -d;
+        }
+        else nbNegatives++;
+        sum += exp2(d * blend);
     }
-    
-    return -log2(sum) / BLEND_STRENGTH;
+
+    return (nbNegatives % 2 == 0 ? 1. : -1.) * log2(sum) / blend;
 }
 
 // central differences
-vec3 computeNormal(const vec3 p)
+vec3 computeNormal(const vec3 p, const float blend)
 {
     const float eps = 1e-4;
     const vec2 h = vec2(eps,0);
-    return normalize( vec3(map(p+h.xyy) - map(p-h.xyy),
-                           map(p+h.yxy) - map(p-h.yxy),
-                           map(p+h.yyx) - map(p-h.yyx) ) );
+    return normalize( vec3(map(p+h.xyy, blend) - map(p-h.xyy, blend),
+                           map(p+h.yxy, blend) - map(p-h.yxy, blend),
+                           map(p+h.yyx, blend) - map(p-h.yyx, blend) ) );
 }
 
 void main()
@@ -44,9 +76,16 @@ void main()
     // debugPrintfEXT("l1 = %f %f %f %f, l3 = %f %f %f %f", ssbo.edits[0].transform_l1.x, ssbo.edits[0].transform_l1.y, ssbo.edits[0].transform_l1.z, ssbo.edits[0].transform_l1.w, ssbo.edits[0].transform_l3.x, ssbo.edits[0].transform_l3.y, ssbo.edits[0].transform_l3.z, ssbo.edits[0].transform_l3.w);
 
     float t = 0.;
+
+    float blend = ssbo.edits[gl_PrimitiveID].blendStrength;
+    for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
+    {
+        blend = max(blend, ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].blendStrength);
+    }
+
     for(int i = 0; i < MAX_IT; i++)
     {
-        float safeDist = map(p);
+        float safeDist = map(p, blend);
 
         if(t + safeDist > gl_RayTmaxEXT)
         {
@@ -56,7 +95,7 @@ void main()
 
         if(safeDist <= gl_RayTminEXT)
         {
-            normal = computeNormal(p);
+            normal = computeNormal(p, blend);
             reportIntersectionEXT(t, 0U);
             return;
         }
