@@ -46,7 +46,7 @@ float shadowRay(const vec3 ro, const vec3 rd)
 {
     return 1.;
     // shadowPayload.shadow = 1.;
-    // traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 1, 2, 1, ro, T_MIN, rd, T_MAX, 1);
+    // traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 1, 2, 1, ro + 0.01 * normal, T_MIN, rd, T_MAX, 1);
 
     // return min(max(shadowPayload.shadow, AMBIENT_INTENSITY), 1.);
 }

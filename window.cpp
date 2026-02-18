@@ -13,6 +13,13 @@ namespace
     {
         (*callback)();
     }
+
+    void (*keyEventCallback)(sk::key, bool);
+
+    void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+    {
+        (*keyEventCallback)(sk::key(key), action == GLFW_PRESS);
+    }
 }
 
 sk::Window::Window(int __WINDOW_WIDTH, int __WINDOW_HEIGHT)
@@ -60,6 +67,24 @@ void sk::Window::getSize(int& pWidth, int& pHeight)
 void sk::Window::setResizeCallback(void (*callback_)(void))
 {
     callback = callback_;
+}
+
+void sk::Window::setKeyEventCallback(void (*__callback)(sk::key, bool))
+{
+    keyEventCallback = __callback;
+    glfwSetKeyCallback(window, glfwKeyCallback);
+}
+
+std::pair<float, float> sk::Window::getMousePos()
+{
+    double xpos, ypos;
+    glfwGetCursorPos(window, &xpos, &ypos);
+    return std::make_pair(xpos, ypos);
+}
+
+std::pair<bool, bool> sk::Window::getMouseClick()
+{
+    return std::make_pair(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS, glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
 }
 
 std::vector<const char*> sk::Window::getRequiredExtensions()

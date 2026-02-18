@@ -1632,8 +1632,8 @@ namespace
             }
         }
 
-        const float BLEND_RADIUS = 0.3;
-        const float A_BIT_MORE = 0.05f;
+        const float BLEND_RADIUS = 0.35;
+        const float A_BIT_MORE = 0.08f;
         for(int i = 0; i < edits.size(); i++)
         {
             sk::math::vec2 extension[3] = { sk::math::vec2(0., 0.), sk::math::vec2(0., 0.), sk::math::vec2(0., 0.) };
@@ -1672,7 +1672,7 @@ namespace
         // cool grey torus
         auto ee = Edit();
         ee.dimensions = sk::math::vec3(1.5, 0.5, 0.5);
-        ee.type = 4;
+        ee.type = 2;
         ee.norm = 2;
         ee.mat.roughness = 1.0;
         ee.mat.albedo = sk::math::vec3(0.4, 1., 1.);

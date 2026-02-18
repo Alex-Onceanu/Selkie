@@ -12,6 +12,19 @@ namespace sk::math
 
         vec2() = default;
         vec2(float __x, float __y) { x = __x; y = __y; };
+
+        vec2& operator+=(const vec2 &r) { x += r.x; y += r.y; return *this; }
+        vec2& operator-=(const vec2 &r) { x -= r.x; y -= r.y; return *this; }
+        vec2& operator*=(const float s) { x *= s; y *=s; return *this; }
+        vec2 operator+(const vec2 &r) const { return vec2(*this) += r; }
+        vec2 operator-(const vec2 &r) const { return vec2(*this) -= r; }
+
+        vec2 operator*(const float r) const { return vec2(*this) *= r; }
+        vec2 operator-() const { return vec2(-x, -y); }
+
+        float dot(const vec2& r) const { return x * r.x + y * r.y; }
+        float length() const { return sqrtf(dot(*this)); }
+        vec2 normalize() const { return *this * (1. / length()); }
     };
 
     struct vec3

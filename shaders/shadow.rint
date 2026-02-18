@@ -8,33 +8,30 @@
 
 hitAttributeEXT float shadow;
 
-// returns distance to the closest object in the scene
-// computes n-ary exponential smooth minimum
+// returns distance to closest object in scene (and handles negative objects)
 float map(const vec3 p, const float blend)
 {
-    float firstDist = sdf(p, gl_PrimitiveID);
-    if(ssbo.edits[gl_PrimitiveID].nbNeighbours == 0)
-        return ssbo.edits[gl_PrimitiveID].negative ? (1. / 0.) : firstDist;
+    float d0 = sdf(p, gl_PrimitiveID);
+    bool isRootNeg = ssbo.edits[gl_PrimitiveID].negative;
 
-    bool atLeastOneNegative = false;
-    if(!ssbo.edits[gl_PrimitiveID].negative)
-    {
-        atLeastOneNegative = true;
-        firstDist = -firstDist;
-    }
-    float sum = exp2(-firstDist * blend);
+    float sum = isRootNeg ? 0. : 1.0;
+    float negsum = !isRootNeg ? 0. : 1.0;
+
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
-        float d = sdf(p, ssbo.edits[gl_PrimitiveID].neighbours[e]);
-        if(!ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].negative)
-        {
-            atLeastOneNegative = true;
-            d = -d;
-        }
-        sum += exp2(-d * blend);
+        int id = ssbo.edits[gl_PrimitiveID].neighbours[e];
+        float d = sdf(p, id);
+
+        if(!ssbo.edits[id].negative) sum += exp2((d0 - d) * blend);
+        else                         negsum += exp2((d0 - d) * blend);
     }
-    
-    return (atLeastOneNegative ? 1. : -1.) * log2(sum) / blend;
+
+    float p_u = d0 - log2(max(1e-10, sum)) / blend;
+    float n_u = d0 - log2(max(1e-10, negsum)) / blend;
+
+    // smooth substraction of (smooth union of positive edits) by (smooth union of negative edits)
+    float m = max(p_u, -n_u);
+    return m + log2(exp2((p_u - m) * blend) + exp2((-n_u - m) * blend)) / blend;
 }
 
 #define SHADOW_SOFTNESS 64
@@ -50,7 +47,7 @@ void main()
         blend = max(blend, ssbo.edits[ssbo.edits[gl_PrimitiveID].neighbours[e]].blendStrength);
     }
 
-    float t = 0.01; p += t * rd;
+    float t = 0.1; p += t * rd;
     shadow = 1.;
     for(int i = 0; i < MAX_IT; i++)
     {

@@ -3,12 +3,14 @@
 
 #include "math.hpp"
 #include "renderer.hpp"
+#include "editor.hpp"
 
 int main()
 {
     try
     {
         auto window = sk::initWindow(1366, 768);
+        auto editor = new Editor(window);
 
         auto startTime = std::chrono::high_resolution_clock::now();
         auto prevTime = startTime;
@@ -18,10 +20,11 @@ int main()
         sk::edit::setPos(1, sk::math::vec3(5.0, -2.3, 0.));
         sk::edit::setAlbedo(1, sk::math::vec3(0.5, 0.3, 0.7));
         sk::edit::setDimensions(1, sk::math::vec3(4.5, 0.75, 4.5));
-        sk::edit::setNegative(0, false);
-        sk::edit::setNegative(1, true);
-        // sk::edit::setBlendStrength(0, 20);
+        // sk::edit::setNegative(0, true);
+        // sk::edit::setNegative(1, false);
 
+        float cyx = 5.f;
+        editor->bind(sk::key::X, &cyx, sk::math::vec2(2.f, 8.f));
 
         int nbFrames = 0;
         while(window->isAlive())
@@ -37,29 +40,15 @@ int main()
                 prevTime = currentTime;
             }
 
-            // sk::edit::setPos(0, sk::math::vec3(sinf(elapsedTime), 0.f, 0.f));
+            editor->update();
 
-            // int i;
-            // if(elapsedTime >= 4.f and not event)
-            // {
-            //     event = true;
-            //     i = sk::edit::add(1);
-            //     sk::edit::setDimensions(i, sk::math::vec3(1., 1., 1.));
-            //     sk::edit::setPos(i, sk::math::vec3(3.6, 1.4, 0.));
-            //     sk::edit::setAlbedo(i, sk::math::vec3(0., 1., 1.));
-            //     sk::edit::setRoughness(i, 1.);
-            //     sk::edit::setRotation(i, sk::math::Quaternion(sk::math::vec3(0., 1., 1.), 0.2 * elapsedTime).normalized().toMatrix());
-            //     std::cout << "Event !" << std::endl;
-            // }
-            // if(elapsedTime >= 4.f)
-            // {
             sk::edit::setRotation(0, sk::math::mat3::rotation(sk::math::vec3(0., 1., 1.), 0.7 * elapsedTime));
-            sk::edit::setPos(0, sk::math::vec3(5., -0.5, 0.));
-            // }
+            sk::edit::setPos(0, sk::math::vec3(cyx, -0.5, 0.));
 
             sk::draw(elapsedTime);
             nbFrames++;
         }
+        delete editor;
         sk::end();
     }
     catch(const std::exception& e)
