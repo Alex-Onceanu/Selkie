@@ -117,7 +117,6 @@ float sdf(const vec3 p, const int which)
 
     if(length(e.elongation) > 0.) d += min(max(elongation_rp.x,max(elongation_rp.y,elongation_rp.z)), 0.0);
     d *= e.scale;
-    if(e.onion > 0.) d = abs(d) - e.onion;
     d -= e.rounding;
 
     return d;

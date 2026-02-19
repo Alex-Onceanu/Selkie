@@ -79,7 +79,7 @@ namespace
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
-    #define MAX_MERGES 16
+    #define MAX_MERGES 8
     struct Edit {
         sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, // is actually the inverse of the model matrix
                         transform_l2{ 0.,1.,0.,0. }, 
@@ -90,7 +90,7 @@ namespace
         sk::math::vec3  elongation{ 0. };
         float           rounding = 0.;
         float           scale = 1.;
-        float           onion = 0.;
+        bool            glass = false;
         float           blendStrength = 9.;
         bool            negative = false;
         float           bend = 0.;
@@ -1543,9 +1543,9 @@ namespace
 
             s += e.elongation + 1e-5 + e.dimensions.x / 2.f;
 
-            s.x *= e.scale + e.onion;
-            s.y *= e.scale + e.onion;
-            s.z *= e.scale + e.onion;
+            s.x *= e.scale;
+            s.y *= e.scale;
+            s.z *= e.scale;
 
             float mc[9];
             e.getRotation().coefs(mc);
@@ -1614,6 +1614,20 @@ namespace
         float minX;
     };
 
+    void computeSomeEditIntersections(const int howMany)
+    {
+        static int cpt = 0;
+        for(int i = 0; i < howMany; i++)
+        {
+            edits[cpt + 1].nbNeighbours = 0;
+            for(int j : (*pparticleNeighbours)[cpt])
+            {
+                addNeighbourIfShould(cpt + 1, j + 1);
+            }
+            cpt = (1 + cpt) % pparticles->size();
+        }
+    }
+
     void computeAllEditIntersections()
     {
         for(auto& e : edits)
@@ -1679,7 +1693,7 @@ namespace
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
 
-        // cool grey torus
+        // the ground is a neighbourless type 1 edit
         auto ee = Edit();
         ee.type = 1;
         ee.norm = 2;
@@ -1696,9 +1710,10 @@ namespace
             auto ee = Edit();
             ee.type = 0;
             ee.norm = 2;
+            ee.glass = true;
             ee.dimensions = sk::math::vec3(0.35);
-            ee.mat.roughness = 0.3;
-            ee.blendStrength = 10.;
+            ee.mat.roughness = 1.;
+            ee.blendStrength = 12.;
             ee.mat.albedo = sk::math::vec3((rand() % 100) / 100.f, (rand() % 100) / 100.f, (rand() % 100) / 100.f);
             ee.setPos((*pparticles)[i] + sk::math::vec3(5., 2., 0.));
             edits.push_back(ee);
@@ -1985,6 +2000,7 @@ void sk::draw(float t)
     if(shouldUpdateSSBO[currentFrame])
     {
         computeBoundingBoxes();
+        // computeSomeEditIntersections(pparticles->size() / 20);
         computeAllEditIntersections();
         ssbos[currentFrame].update();
     }
@@ -2068,7 +2084,7 @@ namespace sk::edit
     void setScale(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].scale = v; }
     void setNegative(       const unsigned int i, const bool v)         { shouldUpdate(); edits[i].negative = v; }
     void setBend(           const unsigned int i, const float v)        { shouldUpdate(); edits[i].bend = v; }
-    void setOnion(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].onion = v; }
+    void setGlass(          const unsigned int i, const bool v)         { shouldUpdate(); edits[i].glass = v; }
     void setNorm(           const unsigned int i, const float v)        { shouldUpdate(); edits[i].norm = v; }
     void setTwist(          const unsigned int i, const float v)        { shouldUpdate(); edits[i].twist = v; }
 }

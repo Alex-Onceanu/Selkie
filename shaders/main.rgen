@@ -24,6 +24,8 @@ void main()
     // rayDir.xz *= rot2D(0.1 * 16.);
 
     payload.mirrorRay = false;
+    payload.refractRay = false;
+    payload.negativeRay = 1.;
 
     // debugPrintfEXT("Edit 0 : rounding %f, scale %f, onion %f, blstr %f, bend %f, norm %f, twist %f", ssbo.edits[0].rounding, ssbo.edits[0].scale, ssbo.edits[0].onion, ssbo.edits[0].blendStrength, ssbo.edits[0].bend, ssbo.edits[0].norm, ssbo.edits[0].twist);
 
@@ -42,8 +44,12 @@ void main()
     traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 1, 0, cameraPos, T_MIN, rayDir, T_MAX, 0);
     vec3 clr = payload.hitColor;
     float shadow = payload.shadow;
+
+    bool rray = payload.refractRay;
+    vec3 rro = payload.refr_ro;
+    vec3 rrd = payload.refr_rd;
     
-    // TODO : use a for-loop
+    // TODO : use a for-loop for recursive reflections
     float roughness = payload.mir_rough;
     if(payload.mirrorRay)
     {
@@ -51,6 +57,23 @@ void main()
         traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 1, 0, payload.mir_ro, T_MIN, payload.mir_rd, T_MAX, 0);
         clr = mix(clr * payload.hitColor, clr, roughness);
         shadow *= payload.shadow;
+        if(payload.refractRay && !rray)
+        {
+            rray = true;
+            rro = payload.refr_ro;
+            rrd = payload.refr_rd;
+        }
+    }
+    if(rray) // refraction
+    {
+        payload.negativeRay = -1.;
+        // mask is 0xFE to give 1 bit (isNegativeRay) of data to .rint
+        traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFE, 0, 1, 0, payload.refr_ro, T_MIN, payload.refr_rd, T_MAX, 0); // the ray is inside the volume TODO : skip closest hit shader but it's the one who sets refr_ro and rd so how ??
+        payload.negativeRay = 1.;
+        // mask is 0x0F to have positive ray but ignore particles
+        traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 1, 0, payload.refr_ro, T_MIN, payload.refr_rd, T_MAX, 0); // the ray exited the volume
+        clr = payload.hitColor;
+        shadow = 1.;//payload.shadow;
     }
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(clr * shadow, 0.0));

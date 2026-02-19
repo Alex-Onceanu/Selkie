@@ -8,10 +8,16 @@ layout(push_constant) uniform PushConstants {
 struct payload_t {
     vec3 hitColor;
     float shadow;
+    
     bool mirrorRay;
     vec3 mir_ro;
     vec3 mir_rd;
     float mir_rough;
+
+    bool refractRay;
+    vec3 refr_ro;
+    vec3 refr_rd;
+    float negativeRay;
 };
 
 mat2 rot2D(const float theta)

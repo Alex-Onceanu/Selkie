@@ -31,7 +31,7 @@ int main()
         float           roughness = 0.5;
         float           rounding = 0.;
         float           scale = 1.;
-        float           onion = 0.;
+        bool            glass = false;
         float           blendStrength = 9.;
         bool            negative = false;
         float           bend = 0.;
@@ -46,7 +46,7 @@ int main()
         editor->bind(sk::key::M, &roughness, sk::math::vec2(0., 1.));
         editor->bind(sk::key::C, &rounding, sk::math::vec2(0., 2.));
         editor->bind(sk::key::S, &scale, sk::math::vec2(0.1, 2.));
-        editor->bind(sk::key::O, &onion, sk::math::vec2(0., 10.));
+        editor->bind(sk::key::G, &glass);
         editor->bind(sk::key::K, &blendStrength, sk::math::vec2(4., 18.));
         editor->bind(sk::key::B, &bend, sk::math::vec2(0., 14.));
         editor->bind(sk::key::N, &norm, sk::math::vec2(0.2, 14.));
@@ -87,14 +87,14 @@ int main()
                 selected = sk::edit::add(digitPressed);
 
                 rot = sk::math::Quaternion(1., sk::math::vec3(0.));
-                inpos = sk::math::vec3(5., 1., 0.);
+                inpos = sk::math::vec3(0., 1., 0.);
                 albedo = sk::math::vec3(0.5);
                 dimensions = sk::edit::getDimensions(selected);
                 elongation = sk::math::vec3(0.);
                 roughness = 0.5;
                 rounding = 0.;
                 scale = 1.;
-                onion = 0.;
+                glass = false;
                 blendStrength = 9.;
                 negative = false;
                 bend = 0.;
@@ -110,7 +110,7 @@ int main()
             sk::edit::setRoughness(selected, roughness);
             sk::edit::setRounding(selected, rounding);
             sk::edit::setScale(selected, scale);
-            sk::edit::setOnion(selected, onion);
+            sk::edit::setGlass(selected, glass);
             sk::edit::setBlendStrength(selected, blendStrength);
             sk::edit::setBend(selected, bend);
             sk::edit::setNorm(selected, norm);

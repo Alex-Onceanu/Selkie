@@ -64,6 +64,13 @@ vec3 sphereColor(const vec3 p, const vec3 rd, const material_t mat, const vec3 l
     const vec3 toLight = normalize(lightPos - p);
     const float diffuse = max(AMBIENT_INTENSITY, dot(normal, toLight));
 
+    if(ssbo.edits[gl_PrimitiveID].glass)
+    {
+        payload.refractRay = true;
+        payload.refr_ro = p + 0.001 * normal;
+        payload.refr_rd = refract(normalize(rd), normal * payload.negativeRay, 1.04 + payload.negativeRay * 0.29);
+        if(payload.negativeRay < 0.) return vec3(1., 0., 1.);
+    }
     const float shadow = shadowRay(p, toLight);
     if(mat.roughness < 0.95)
     {

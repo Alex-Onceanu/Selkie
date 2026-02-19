@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
-#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_ray_cull_mask : require
+// #extension GL_EXT_debug_printf : enable
 
 #include "constants.glsl"
 #include "ssbo.glsl"
@@ -11,7 +12,7 @@ hitAttributeEXT vec3 normal;
 // returns distance to closest object in scene (and handles negative objects)
 float map(const vec3 p, const float blend)
 {
-    float d0 = sdf(p, gl_PrimitiveID);
+    float d0 = sdf(p, gl_PrimitiveID) * ((gl_CullMaskEXT & 1U) == 1 ? 1. : -1.);
     bool isRootNeg = ssbo.edits[gl_PrimitiveID].negative;
 
     float sum = isRootNeg ? 0. : 1.0;
@@ -20,7 +21,7 @@ float map(const vec3 p, const float blend)
     for(int e = 0; e < ssbo.edits[gl_PrimitiveID].nbNeighbours; e++)
     {
         int id = ssbo.edits[gl_PrimitiveID].neighbours[e];
-        float d = sdf(p, id);
+        float d = sdf(p, id) * ((gl_CullMaskEXT & 1U) == 1 ? 1. : -1.);
 
         if(!ssbo.edits[id].negative) sum += exp2((d0 - d) * blend);
         else                         negsum += exp2((d0 - d) * blend);

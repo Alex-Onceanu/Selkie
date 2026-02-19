@@ -3,7 +3,7 @@
 
 // TODO : separate this in 2 ssbos : one for shape, other for material ?
 // Should be a multiple of 4 for gpu memory alignment !!!
-#define MAX_MERGES 16
+#define MAX_MERGES 8
 
 struct material_t {
     vec3 albedo;
@@ -20,7 +20,7 @@ struct edit_t {
     vec3        elongation;
     float       rounding;
     float       scale;
-    float       onion;
+    bool        glass;
     float       blendStrength;
     bool        negative;
     float       bend;

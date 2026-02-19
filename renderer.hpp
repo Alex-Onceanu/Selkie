@@ -29,7 +29,7 @@ namespace sk
         void setScale(          const unsigned int i, const float v);
         void setNegative(       const unsigned int i, const bool v);
         void setBend(           const unsigned int i, const float v);
-        void setOnion(          const unsigned int i, const float v);
+        void setGlass(          const unsigned int i, const bool v);
         void setNorm(           const unsigned int i, const float v);
         void setTwist(          const unsigned int i, const float v);
     }
