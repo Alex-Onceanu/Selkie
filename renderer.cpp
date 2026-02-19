@@ -191,7 +191,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
-    sk::math::vec3 camPos(9., 2.2, 19.);
+    sk::math::vec3 camPos(9., 2.2, 17.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<SSBO> ssbos{};
@@ -1708,7 +1708,7 @@ namespace
         for(int i = 0; i < pparticles->size(); i++)
         {
             auto ee = Edit();
-            ee.type = 2;
+            ee.type = 0;
             ee.norm = 2;
             ee.glass = true;
             ee.dimensions = sk::math::vec3(0.38, 0.1, 0.1);
