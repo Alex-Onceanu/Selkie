@@ -84,10 +84,10 @@ float sdf(const vec3 p, const int which)
                             0., 0., 0., 1.);
 
     vec3 rp = (vec4(p, 1.) * model).xyz;
-    // rp = opBend(opTwist(rp, e.twist), e.bend);
-    // rp /= e.scale;
-    // vec3 elongation_rp = abs(rp) - e.elongation;
-    // if(length(e.elongation) > 0.) rp = max(vec3(0.), elongation_rp);
+    rp = opBend(opTwist(rp, e.twist), e.bend);
+    rp /= e.scale;
+    vec3 elongation_rp = abs(rp) - e.elongation;
+    if(length(e.elongation) > 0.) rp = max(vec3(0.), elongation_rp);
 
     float d = 1. / 0.;
     const float n = e.norm;
@@ -115,10 +115,10 @@ float sdf(const vec3 p, const int which)
         break;
     }
 
-    // if(length(e.elongation) > 0.) d += min(max(elongation_rp.x,max(elongation_rp.y,elongation_rp.z)), 0.0);
-    // d *= e.scale;
-    // if(e.onion > 0.) d = abs(d) - e.onion;
-    // d -= e.rounding;
+    if(length(e.elongation) > 0.) d += min(max(elongation_rp.x,max(elongation_rp.y,elongation_rp.z)), 0.0);
+    d *= e.scale;
+    if(e.onion > 0.) d = abs(d) - e.onion;
+    d -= e.rounding;
 
     return d;
 }

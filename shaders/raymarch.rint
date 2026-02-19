@@ -65,7 +65,6 @@ void main()
 
         if(t + safeDist > gl_RayTmaxEXT)
         {
-            // reportIntersectionEXT(1., 129U);
             return;
         }
 

@@ -26,9 +26,9 @@ namespace sk
         void setRounding(       const unsigned int i, const float v);
         void setElongation(     const unsigned int i, const math::vec3 v);
         void setBlendStrength(  const unsigned int i, const float v);
-        void setScale(          const unsigned int i, const math::vec3 v);
+        void setScale(          const unsigned int i, const float v);
         void setNegative(       const unsigned int i, const bool v);
-        void setBend(           const unsigned int i, const math::vec3 v);
+        void setBend(           const unsigned int i, const float v);
         void setOnion(          const unsigned int i, const float v);
         void setNorm(           const unsigned int i, const float v);
         void setTwist(          const unsigned int i, const float v);

@@ -1505,16 +1505,6 @@ namespace
         tlasDescInfo.setAccelerationStructures(tlasAccel);
     }
 
-    /*
-    
-    for i<3u:
-        a = M[i][j] * A.min[j]
-        b = M[i][j] * A.max[j]
-        B.min[i] += a < b ? a : b
-        B.max[i] += a < b ? b : a
-    
-    */
-
     void computeBoundingBoxes()
     {
         editsBoundingBoxes.clear();
@@ -1545,6 +1535,12 @@ namespace
                 s = sk::math::vec3(std::max(e.dimensions.x, e.dimensions.y), e.dimensions.z, std::max(e.dimensions.x, e.dimensions.y));
                 break;
             }
+
+            s += e.elongation;
+
+            s.x *= e.scale + e.onion;
+            s.y *= e.scale + e.onion;
+            s.z *= e.scale + e.onion;
 
             float mc[9];
             e.getRotation().coefs(mc);
@@ -1620,7 +1616,7 @@ namespace
         }
 
         // naïve O(n²) approach for now
-        for(int i = 0; i < edits.size(); i++)
+        for(int i = 1; i < edits.size(); i++)
         {
             for(int j = i + 1; j < edits.size(); j++)
             {
@@ -1632,29 +1628,29 @@ namespace
             }
         }
 
-        const float BLEND_RADIUS = 0.35;
         const float A_BIT_MORE = 0.08f;
-        for(int i = 0; i < edits.size(); i++)
+        for(int i = 1; i < edits.size(); i++)
         {
+            float blend_radius = 1. / edits[i].blendStrength;
             sk::math::vec2 extension[3] = { sk::math::vec2(0., 0.), sk::math::vec2(0., 0.), sk::math::vec2(0., 0.) };
             for(int j = 0; j < edits[i].nbNeighbours; j++)
             {
                 const int k = edits[i].neighbours[j];
 
                 if(edits[i].getPos().x < edits[k].getPos().x) 
-                    extension[0].y = std::min(BLEND_RADIUS, edits[k].getPos().x - edits[i].getPos().x + A_BIT_MORE);
+                    extension[0].y = std::min(blend_radius, edits[k].getPos().x - edits[i].getPos().x + A_BIT_MORE);
                 else 
-                    extension[0].x = std::min(BLEND_RADIUS, edits[i].getPos().x - edits[k].getPos().x + A_BIT_MORE);
+                    extension[0].x = std::min(blend_radius, edits[i].getPos().x - edits[k].getPos().x + A_BIT_MORE);
 
                 if(edits[i].getPos().y < edits[k].getPos().y) 
-                    extension[1].y = std::min(BLEND_RADIUS, edits[k].getPos().y - edits[i].getPos().y + A_BIT_MORE);
+                    extension[1].y = std::min(blend_radius, edits[k].getPos().y - edits[i].getPos().y + A_BIT_MORE);
                 else 
-                    extension[1].x = std::min(BLEND_RADIUS, edits[i].getPos().y - edits[k].getPos().y + A_BIT_MORE);
+                    extension[1].x = std::min(blend_radius, edits[i].getPos().y - edits[k].getPos().y + A_BIT_MORE);
 
                 if(edits[i].getPos().z < edits[k].getPos().z) 
-                    extension[2].y = std::min(BLEND_RADIUS, edits[k].getPos().z - edits[i].getPos().z + A_BIT_MORE);
+                    extension[2].y = std::min(blend_radius, edits[k].getPos().z - edits[i].getPos().z + A_BIT_MORE);
                 else 
-                    extension[2].x = std::min(BLEND_RADIUS, edits[i].getPos().z - edits[k].getPos().z + A_BIT_MORE);
+                    extension[2].x = std::min(blend_radius, edits[i].getPos().z - edits[k].getPos().z + A_BIT_MORE);
             }
             editsBoundingBoxes[i].minX -= extension[0].x; editsBoundingBoxes[i].maxX += extension[0].y;
             editsBoundingBoxes[i].minY -= extension[1].x; editsBoundingBoxes[i].maxY += extension[1].y;
@@ -1671,11 +1667,12 @@ namespace
 
         // cool grey torus
         auto ee = Edit();
-        ee.dimensions = sk::math::vec3(1.5, 0.5, 0.5);
-        ee.type = 2;
+        ee.type = 1;
         ee.norm = 2;
-        ee.mat.roughness = 1.0;
-        ee.mat.albedo = sk::math::vec3(0.4, 1., 1.);
+        ee.dimensions = sk::math::vec3(100., 1., 100.);
+        ee.mat.roughness = 0.2;
+        ee.mat.albedo = sk::math::vec3(-0.1);
+        ee.setPos(sk::math::vec3(-50.0, -0.5, -50.));
         edits.push_back(ee);
 
         computeBoundingBoxes();

@@ -83,28 +83,46 @@ namespace sk::math
                         vec3(T.C3.dot(o.C1), T.C3.dot(o.C2), T.C3.dot(o.C3)));
         }
 
-        static mat3 rotation(vec3 axis, float angle)
-        {
-            vec3 up(0., 1., 0.), naxis = axis.normalize();
-            float de = sin(angle), ph = cos(angle);
-            if(fabsf(naxis.y) > 0.999) // rotation around (Oy), no change of basis is needed
-                return mat3(cosf(angle), 0., -sinf(angle),
-                            0.,          1.,  0.,
-                            sinf(angle), 0.,  cosf(angle));
-            float lbd = 1. / sqrtf(1. - naxis.y);
-            vec3 abc = ((up - naxis * naxis.y) * lbd).normalize();
-            vec3 cr = abc.cross(naxis);
-
-            // change of basis then rotation around (Oy) then re-change of basis (product of 3 matrices)
-            return mat3((abc.x * ph - cr.x * de) * abc.x + naxis.x * naxis.x + (abc.x * de + cr.x * ph) * cr.x, (abc.y * ph - cr.y * de) * abc.x + naxis.x * naxis.y + (abc.y * de + cr.y * ph) * cr.x, (abc.z * ph - cr.z * de) * abc.x + naxis.x * naxis.z + (abc.z * de + cr.z * ph) * cr.x,
-                        (abc.x * ph - cr.x * de) * abc.y + naxis.y * naxis.x + (abc.x * de + cr.x * ph) * cr.y, (abc.y * ph - cr.y * de) * abc.y + naxis.y * naxis.y + (abc.y * de + cr.y * ph) * cr.y, (abc.z * ph - cr.z * de) * abc.y + naxis.y * naxis.z + (abc.z * de + cr.z * ph) * cr.y,
-                        (abc.x * ph - cr.x * de) * abc.z + naxis.z * naxis.x + (abc.x * de + cr.x * ph) * cr.z, (abc.y * ph - cr.y * de) * abc.z + naxis.z * naxis.y + (abc.y * de + cr.y * ph) * cr.z, (abc.z * ph - cr.z * de) * abc.z + naxis.z * naxis.z + (abc.z * de + cr.z * ph) * cr.z);
-        }
-
         void coefs(float* p) const { if(!p) return;
             p[0] = C1.x;    p[3] = C2.x;   p[6] = C3.x; 
             p[1] = C1.y;    p[4] = C2.y;   p[7] = C3.y;
             p[2] = C1.z;    p[5] = C2.z;   p[8] = C3.z;
         }
+    };
+
+    struct Quaternion
+    {
+        float s{};
+        vec3 w{};
+
+        Quaternion(const float s_, const vec3& w_) : s(s_), w(w_) {}
+        Quaternion(const vec3 axis, const float angle)
+        {
+            s = cosf(angle / 2.f);
+            w = axis * sinf(angle / 2.f);
+        }
+
+        Quaternion operator+(const Quaternion& o) { return Quaternion(s + o.s, w + o.w); }
+        Quaternion operator-(const Quaternion& o) { return Quaternion(s - o.s, w - o.w); }
+        Quaternion operator*(const Quaternion& o)
+        {
+            return Quaternion(s * o.s - w.dot(o.w), o.w * s + w * o.s - w.cross(o.w));
+        }
+        Quaternion operator*(const float f) { return Quaternion(s * f, w * f); }
+
+        Quaternion& operator+=(const Quaternion& o) { return *this = (*this + o); }
+        Quaternion& operator-=(const Quaternion& o) { return *this = (*this - o); }
+        Quaternion& operator*=(const Quaternion& o) { return *this = (*this * o); }
+        Quaternion& operator*=(const float f) { return *this = (*this * f); }
+
+        mat3 toMatrix()
+        {
+            return mat3(1.-2.*w.y*w.y-2.*w.z*w.z, 2.*w.x*w.y+2.*s*w.z, 2.*w.x*w.z-2.*s*w.y,
+                        2.*w.x*w.y-2.*s*w.z, 1.-2.*w.x*w.x-2.*w.z*w.z, 2.*w.y*w.z+2.*s*w.x,
+                        2.*w.x*w.z+2.*s*w.y, 2.*w.y*w.z-2.*s*w.x, 1.-2.*w.x*w.x-2.*w.y*w.y);
+        }
+
+        // inplace (builder pattern)
+        Quaternion& normalized() { return *this *= (1.f / sqrtf(s * s + w.dot(w))); }
     };
 }

@@ -14,17 +14,39 @@ int main()
 
         auto startTime = std::chrono::high_resolution_clock::now();
         auto prevTime = startTime;
-        bool event = false;
 
-        sk::edit::add(1);
-        sk::edit::setPos(1, sk::math::vec3(5.0, -2.3, 0.));
-        sk::edit::setAlbedo(1, sk::math::vec3(0.5, 0.3, 0.7));
-        sk::edit::setDimensions(1, sk::math::vec3(4.5, 0.75, 4.5));
-        // sk::edit::setNegative(0, true);
-        // sk::edit::setNegative(1, false);
+        int selected = sk::edit::add(0); // TODO : which edit is currently being modified?
 
-        float cyx = 5.f;
-        editor->bind(sk::key::X, &cyx, sk::math::vec2(2.f, 8.f));
+        sk::math::Quaternion rot(1., sk::math::vec3(0.));
+        rot.normalized();
+        sk::math::vec3  inpos(5., 1.5, 0.);
+        sk::math::vec3  albedo = sk::math::vec3(0.3, 1., 0.4);
+        sk::math::vec3  dimensions = sk::edit::getDimensions(selected);
+        sk::math::vec3  elongation{ 0. };
+        float           roughness = 0.5;
+        float           rounding = 0.;
+        float           scale = 1.;
+        float           onion = 0.;
+        float           blendStrength = 9.;
+        bool            negative = false;
+        float           bend = 0.;
+        float           norm = 2.;
+        float           twist = 0.;
+        
+        editor->bind(sk::key::R, &rot);
+        editor->bind(sk::key::P, &inpos, sk::math::vec2(-4., 12.));
+        editor->bind(sk::key::A, &albedo, sk::math::vec2(0., 1.));
+        editor->bind(sk::key::D, &dimensions, sk::math::vec2(0.01, 5.));
+        editor->bind(sk::key::E, &elongation, sk::math::vec2(0., 3.));
+        editor->bind(sk::key::M, &roughness, sk::math::vec2(0., 1.));
+        editor->bind(sk::key::C, &rounding, sk::math::vec2(0., 2.));
+        editor->bind(sk::key::S, &scale, sk::math::vec2(0.1, 2.));
+        editor->bind(sk::key::O, &onion, sk::math::vec2(0., 10.));
+        editor->bind(sk::key::K, &blendStrength, sk::math::vec2(4., 18.));
+        editor->bind(sk::key::B, &bend, sk::math::vec2(0., 14.));
+        editor->bind(sk::key::N, &norm, sk::math::vec2(0.2, 14.));
+        editor->bind(sk::key::T, &twist, sk::math::vec2(0., 14.));
+        editor->bind(sk::key::H, &negative);
 
         int nbFrames = 0;
         while(window->isAlive())
@@ -40,10 +62,43 @@ int main()
                 prevTime = currentTime;
             }
 
-            editor->update();
+            int digitPressed = -1;
+            editor->update(digitPressed);
 
-            sk::edit::setRotation(0, sk::math::mat3::rotation(sk::math::vec3(0., 1., 1.), 0.7 * elapsedTime));
-            sk::edit::setPos(0, sk::math::vec3(cyx, -0.5, 0.));
+            if(digitPressed >= 0 and digitPressed <= 5)
+            {
+                selected = sk::edit::add(digitPressed);
+
+                rot = sk::math::Quaternion(1., sk::math::vec3(0.));
+                inpos = sk::math::vec3(5., 1., 0.);
+                albedo = sk::math::vec3(0.5);
+                dimensions = sk::edit::getDimensions(selected);
+                elongation = sk::math::vec3(0.);
+                roughness = 0.5;
+                rounding = 0.;
+                scale = 1.;
+                onion = 0.;
+                blendStrength = 9.;
+                negative = false;
+                bend = 0.;
+                norm = 2.;
+                twist = 0.;
+            }
+
+            sk::edit::setPos(selected, inpos);
+            sk::edit::setRotation(selected, rot.toMatrix());
+            sk::edit::setAlbedo(selected, albedo);
+            sk::edit::setDimensions(selected, dimensions);
+            sk::edit::setElongation(selected, elongation);
+            sk::edit::setRoughness(selected, roughness);
+            sk::edit::setRounding(selected, rounding);
+            sk::edit::setScale(selected, scale);
+            sk::edit::setOnion(selected, onion);
+            sk::edit::setBlendStrength(selected, blendStrength);
+            sk::edit::setBend(selected, bend);
+            sk::edit::setNorm(selected, norm);
+            sk::edit::setTwist(selected, twist);
+            sk::edit::setNegative(selected, negative);
 
             sk::draw(elapsedTime);
             nbFrames++;
