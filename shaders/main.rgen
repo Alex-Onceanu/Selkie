@@ -18,7 +18,7 @@ void main()
     uv.x *= 1366. / 768.; // aspect ratio
     uv.y = - uv.y;        // x goes right, y goes up, z towards me
 
-    vec3 cameraPos = vec3(10., 3.2, 15.);
+    vec3 cameraPos = vec3(9., 2.2, 19.);
     vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * FOV));
     // cameraPos.xz *= rot2D(0.1 * 16.);
     // rayDir.xz *= rot2D(0.1 * 16.);
@@ -67,13 +67,34 @@ void main()
     if(rray) // refraction
     {
         payload.negativeRay = -1.;
-        // mask is 0xFE to give 1 bit (isNegativeRay) of data to .rint
-        traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFE, 0, 1, 0, payload.refr_ro, T_MIN, payload.refr_rd, T_MAX, 0); // the ray is inside the volume TODO : skip closest hit shader but it's the one who sets refr_ro and rd so how ??
+        payload.refractRay = false;
+        vec3 oldRd = payload.refr_rd;
+        // mask is 0xFE to give 1 bit (isNegativeRay) of data to .rint, becomes 0xFC to tell .rchit to skip the shadow ray
+        traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFC, 0, 1, 0, payload.refr_ro, T_MIN, payload.refr_rd, T_MAX, 0); // the ray is inside the volume 
         payload.negativeRay = 1.;
-        // mask is 0x0F to have positive ray but ignore particles
-        traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 1, 0, payload.refr_ro, T_MIN, payload.refr_rd, T_MAX, 0); // the ray exited the volume
-        clr = payload.hitColor;
-        shadow = 1.;//payload.shadow;
+        if(abs(dot(payload.refr_rd, oldRd)) > 0.)
+        {
+            // mask is 0x0F to have positive ray but ignore particles, becomes 0x0D to skip shadow
+            traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0x0D, 0, 1, 0, payload.refr_ro, T_MIN, payload.refr_rd, T_MAX, 0); // the ray exited the volume
+            clr *= payload.hitColor;
+            shadow *= payload.shadow;
+        }
+        else
+        {
+            // draw what was behind this
+            payload.mirrorRay = false;
+            traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0x0F, 0, 1, 0, cameraPos, T_MIN, rayDir, T_MAX, 0);
+            clr = payload.hitColor;
+            shadow = payload.shadow;
+
+            float roughness = payload.mir_rough;
+            if(payload.mirrorRay)
+            {
+                traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 0, 1, 0, payload.mir_ro, T_MIN, payload.mir_rd, T_MAX, 0);
+                clr = mix(clr * payload.hitColor, clr, roughness);
+                shadow *= payload.shadow;
+            }
+        }
     }
 
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(clr * shadow, 0.0));

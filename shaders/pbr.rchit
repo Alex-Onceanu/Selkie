@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 // #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_ray_cull_mask : require
 
 #include "constants.glsl"
 #include "main_payload.glsl"
@@ -44,6 +45,7 @@ material_t blendMaterial(const vec3 p, const float blend)
 
 float shadowRay(const vec3 ro, const vec3 rd)
 {
+    if((gl_CullMaskEXT & 2) == 0U) return 1.;
     shadowPayload.shadow = 1.;
     traceRayEXT(bvh, gl_RayFlagsNoneEXT, 0xFF, 1, 2, 1, ro + 0.01 * normal, T_MIN, rd, T_MAX, 1);
 

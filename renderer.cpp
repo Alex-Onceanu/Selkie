@@ -26,8 +26,8 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 // #define RT_WIDTH 1920u
 // #define RT_HEIGHT 1080u
 
-#define RT_WIDTH 1366u
-#define RT_HEIGHT 768u
+#define RT_WIDTH 720u
+#define RT_HEIGHT 480u
 
 // structs
 namespace
@@ -79,7 +79,7 @@ namespace
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
-    #define MAX_MERGES 8
+    #define MAX_MERGES 16
     struct Edit {
         sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, // is actually the inverse of the model matrix
                         transform_l2{ 0.,1.,0.,0. }, 
@@ -191,7 +191,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
-    sk::math::vec3 camPos(10., 3.2, 15.);
+    sk::math::vec3 camPos(9., 2.2, 19.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<SSBO> ssbos{};
@@ -1708,13 +1708,14 @@ namespace
         for(int i = 0; i < pparticles->size(); i++)
         {
             auto ee = Edit();
-            ee.type = 0;
+            ee.type = 2;
             ee.norm = 2;
             ee.glass = true;
-            ee.dimensions = sk::math::vec3(0.35);
+            ee.dimensions = sk::math::vec3(0.38, 0.1, 0.1);
+            ee.setRotation(sk::math::Quaternion(sk::math::vec3(1.,0.,0.), 3.1416/2.f).normalized().toMatrix());
             ee.mat.roughness = 1.;
             ee.blendStrength = 12.;
-            ee.mat.albedo = sk::math::vec3((rand() % 100) / 100.f, (rand() % 100) / 100.f, (rand() % 100) / 100.f);
+            ee.mat.albedo = sk::math::vec3(0.5 + (rand() % 50) / 50.f, 0.5 + (rand() % 50) / 50.f, 0.5 + (rand() % 50) / 50.f);
             ee.setPos((*pparticles)[i] + sk::math::vec3(5., 2., 0.));
             edits.push_back(ee);
         }
@@ -2000,8 +2001,8 @@ void sk::draw(float t)
     if(shouldUpdateSSBO[currentFrame])
     {
         computeBoundingBoxes();
-        // computeSomeEditIntersections(pparticles->size() / 20);
-        computeAllEditIntersections();
+        computeSomeEditIntersections(pparticles->size() / 20);
+        // computeAllEditIntersections();
         ssbos[currentFrame].update();
     }
 

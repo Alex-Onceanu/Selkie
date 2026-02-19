@@ -47,6 +47,7 @@ vec3 computeNormal(const vec3 p, const float blend)
 
 void main()
 {
+    if(gl_PrimitiveID >= 1 && gl_PrimitiveID <= NB_PARTICLES && (gl_CullMaskEXT & 0xF0) == 0U) return; // ignore particles when getting out of refraction
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
     // debugPrintfEXT("Type = %d, Dims = %f %f %f, pos = %f %f %f", ssbo.edits[gl_PrimitiveID].type, ssbo.edits[gl_PrimitiveID].dimensions.x, ssbo.edits[gl_PrimitiveID].dimensions.y, ssbo.edits[gl_PrimitiveID].dimensions.z, getPos(gl_PrimitiveID).x, getPos(gl_PrimitiveID).y, getPos(gl_PrimitiveID).z);
