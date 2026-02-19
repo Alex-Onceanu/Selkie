@@ -39,13 +39,13 @@ int main()
         float           twist = 0.;
         
         editor->bind(sk::key::R, &rot);
-        editor->bind(sk::key::P, &inpos, sk::math::vec2(-4., 12.));
+        editor->bind(sk::key::P, &inpos, sk::math::vec2(-30., 30.));
         editor->bind(sk::key::A, &albedo, sk::math::vec2(0., 1.));
-        editor->bind(sk::key::D, &dimensions, sk::math::vec2(0.01, 5.));
-        editor->bind(sk::key::E, &elongation, sk::math::vec2(0., 3.));
+        editor->bind(sk::key::D, &dimensions, sk::math::vec2(0.01, 10.));
+        editor->bind(sk::key::E, &elongation, sk::math::vec2(0., 10.));
         editor->bind(sk::key::M, &roughness, sk::math::vec2(0., 1.));
-        editor->bind(sk::key::C, &rounding, sk::math::vec2(0., 2.));
-        editor->bind(sk::key::S, &scale, sk::math::vec2(0.1, 2.));
+        editor->bind(sk::key::C, &rounding, sk::math::vec2(0., 4.));
+        editor->bind(sk::key::S, &scale, sk::math::vec2(0.1, 4.));
         editor->bind(sk::key::G, &glass);
         editor->bind(sk::key::K, &blendStrength, sk::math::vec2(4., 18.));
         editor->bind(sk::key::B, &bend, sk::math::vec2(0., 14.));

@@ -79,7 +79,7 @@ namespace
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
-    #define MAX_MERGES 16
+    #define MAX_MERGES 12
     struct Edit {
         sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, // is actually the inverse of the model matrix
                         transform_l2{ 0.,1.,0.,0. }, 
@@ -191,7 +191,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
-    sk::math::vec3 camPos(9., 2.2, 19.);
+    sk::math::vec3 camPos(12., 2.2, 24.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<SSBO> ssbos{};
@@ -1708,11 +1708,11 @@ namespace
         for(int i = 0; i < pparticles->size(); i++)
         {
             auto ee = Edit();
-            ee.type = 2;
+            ee.type = 0;
             ee.norm = 2;
-            ee.glass = true;
-            ee.dimensions = sk::math::vec3(0.38, 0.1, 0.1);
-            ee.setRotation(sk::math::Quaternion(sk::math::vec3(1.,0.,0.), 3.1416/2.f).normalized().toMatrix());
+            ee.glass = false;
+            ee.dimensions = sk::math::vec3(0.35);
+            // ee.setRotation(sk::math::Quaternion(sk::math::vec3(1.,0.,0.), 3.1416/2.f).normalized().toMatrix());
             ee.mat.roughness = 1.;
             ee.blendStrength = 12.;
             ee.mat.albedo = sk::math::vec3(0.5 + (rand() % 50) / 50.f, 0.5 + (rand() % 50) / 50.f, 0.5 + (rand() % 50) / 50.f);

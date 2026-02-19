@@ -7,6 +7,6 @@
 #define T_MAX 1e3
 #define AMBIENT_INTENSITY 0.2
 #define LIGHTPOS vec3(0.5, 12., 7.) // this should be an uniform
-#define NB_PARTICLES (3 * 16 * 1 * 4)
+#define NB_PARTICLES (4 * 8 * 9 * 4)
 
 #endif
