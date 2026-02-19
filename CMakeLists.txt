@@ -32,7 +32,7 @@ endif()
 
 find_package(Vulkan REQUIRED)
 
-add_executable(${PROJECT_NAME} window.cpp renderer.cpp main.cpp)
+add_executable(${PROJECT_NAME} window.cpp renderer.cpp main.cpp sph.cpp)
 
 target_link_libraries(${PROJECT_NAME} glfw ${GLFW_LIBRARIES} Vulkan::Vulkan)
 

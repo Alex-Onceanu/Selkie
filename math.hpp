@@ -11,6 +11,7 @@ namespace sk::math
         float x = 0.f, y = 0.f;
 
         vec2() = default;
+        vec2(float __xy) { x = __xy; y = __xy; }
         vec2(float __x, float __y) { x = __x; y = __y; };
 
         vec2& operator+=(const vec2 &r) { x += r.x; y += r.y; return *this; }

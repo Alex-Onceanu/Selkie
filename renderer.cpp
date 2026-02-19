@@ -18,15 +18,16 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #include "math.hpp"
 #include "renderer.hpp"
 #include "window.hpp"
+#include "sph.hpp"
 
 // #define RT_WIDTH 3840u
 // #define RT_HEIGHT 2160u
 
-#define RT_WIDTH 1920u
-#define RT_HEIGHT 1080u
+// #define RT_WIDTH 1920u
+// #define RT_HEIGHT 1080u
 
-// #define RT_WIDTH 1366u
-// #define RT_HEIGHT 768u
+#define RT_WIDTH 1366u
+#define RT_HEIGHT 768u
 
 // structs
 namespace
@@ -78,7 +79,7 @@ namespace
 
     // how to match this define with the one in ssbo.glsl ?
     // Should be a multiple of 4 for gpu memory alignment !!!
-    #define MAX_MERGES 8
+    #define MAX_MERGES 16
     struct Edit {
         sk::math::vec4  transform_l1{ 1.,0.,0.,0. }, // is actually the inverse of the model matrix
                         transform_l2{ 0.,1.,0.,0. }, 
@@ -137,7 +138,7 @@ namespace
     std::shared_ptr<sk::Window> window;
     vk::detail::DynamicLoader dl;
     vk::Instance instance;
-#ifndef NDEBUG
+#ifndef NNDEBUG
     vk::DebugUtilsMessengerEXT messenger;
 #endif
     vk::SurfaceKHR surface;  // "fenêtre" du point de vue de Vulkan
@@ -168,7 +169,7 @@ namespace
     vk::WriteDescriptorSetAccelerationStructureKHR tlasDescInfo;
     vk::AccelerationStructureKHR tlasAccel;
     
-    size_t aabbsStagingBufferMaxSize = 1000; // once the number of edits crosses a certain threshold, reallocate this staging buffer
+    size_t aabbsStagingBufferMaxSize = 4096; // once the number of edits crosses a certain threshold, reallocate this staging buffer
     Buffer aabbsStagingBuffer; // TODO : this should be a vector (one staging buf for every hitgroup)
     // basically this entire part should be reviewed when adapting this to multiple hitgroups
     void* aabbsStagingBufferMapped;
@@ -190,7 +191,7 @@ namespace
     std::vector<vk::ShaderModule> shaderModules{};
     std::vector<Buffer> bindingTableBufs{};
 
-    sk::math::vec3 camPos(0., 2., 16.);
+    sk::math::vec3 camPos(10., 3.2, 15.);
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{}; // this too
     std::vector<SSBO> ssbos{};
@@ -211,6 +212,9 @@ namespace
     uint32_t currentSwapChainImage;
     bool windowResized;
 
+    std::vector<sk::math::vec3>* pparticles;
+    std::vector<std::vector<int>>* pparticleNeighbours;
+
     const std::vector<const char*> deviceRequiredExtensions = {
         #ifdef __APPLE__
         "VK_KHR_portability_subset",
@@ -229,7 +233,7 @@ namespace
 // methodes
 namespace
 {
-#ifndef NDEBUG
+#ifndef NNDEBUG
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                                                         vk::DebugUtilsMessageTypeFlagsEXT messageType,
                                                         const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
@@ -269,7 +273,7 @@ namespace
         createInfo.flags |= vk::InstanceCreateFlags(VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR);
 #endif
 
-#ifndef NDEBUG
+#ifndef NNDEBUG
         auto debugInfo = vk::DebugUtilsMessengerCreateInfoEXT()
             .setMessageSeverity(vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo)
             .setMessageType(vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation)
@@ -287,7 +291,7 @@ namespace
         auto createInfo = vk::InstanceCreateInfo()
             .setPEnabledExtensionNames(requiredExtensions)
             .setPApplicationInfo(&appInfo)
-#ifndef NDEBUG
+#ifndef NNDEBUG
             .setPEnabledLayerNames(layers)
             .setPNext(&validationFeatures);
 #else
@@ -296,7 +300,7 @@ namespace
         instance = vk::createInstance(createInfo);
         VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
 
-#ifndef NDEBUG
+#ifndef NNDEBUG
         messenger = instance.createDebugUtilsMessengerEXT(debugInfo);
 #endif
     }
@@ -1228,7 +1232,7 @@ namespace
         SSBO(std::vector<Edit>& pEdits__, int frame__)
             : pEdits(pEdits__), frame(frame__)
         {
-            maxNbElements = pEdits.size();
+            maxNbElements = pEdits.size() * 2;
             prevNbElements = maxNbElements;
             bufSize = maxNbElements * sizeof(pEdits.front());
             buf = createBuffer(bufSize, 
@@ -1237,7 +1241,7 @@ namespace
                                 vk::MemoryPropertyFlagBits::eHostCoherent);
 
             mappedMem = device.mapMemory(buf.memory, 0, bufSize);
-            memcpy(mappedMem, pEdits.data(), bufSize);
+            memcpy(mappedMem, pEdits.data(), pEdits.size() * sizeof(pEdits.front()));
 
             // TODO : should update descriptor sets but outside of this (since they don't exist yet at ssbo creation)
         }
@@ -1255,6 +1259,7 @@ namespace
 
         void update()
         {
+            const auto contentSize = pEdits.size() * sizeof(pEdits.front());
             if(pEdits.size() > maxNbElements)
             {
                 maxNbElements *= 2;
@@ -1267,11 +1272,11 @@ namespace
                                     vk::MemoryPropertyFlagBits::eHostCoherent);
 
                 mappedMem = device.mapMemory(buf.memory, 0, bufSize);
-                memcpy(mappedMem, pEdits.data(), bufSize);
+                memcpy(mappedMem, pEdits.data(), contentSize);
             }
             else
             {
-                memcpy(mappedMem, pEdits.data(), bufSize);
+                memcpy(mappedMem, pEdits.data(), contentSize);
             }
 
             if(prevNbElements != pEdits.size())
@@ -1281,7 +1286,7 @@ namespace
                     .setDstBinding(2)
                     .setDescriptorType(bindings[2].descriptorType)
                     .setDescriptorCount(bindings[2].descriptorCount)
-                    .setBufferInfo(vk::DescriptorBufferInfo().setBuffer(buf.buf).setOffset(0).setRange(pEdits.size() * sizeof(pEdits.front())));
+                    .setBufferInfo(vk::DescriptorBufferInfo().setBuffer(buf.buf).setOffset(0).setRange(contentSize));
 
                 device.updateDescriptorSets(descriptorWrite, nullptr);
             }
@@ -1536,7 +1541,7 @@ namespace
                 break;
             }
 
-            s += e.elongation;
+            s += e.elongation + 1e-5 + e.dimensions.x / 2.f;
 
             s.x *= e.scale + e.onion;
             s.y *= e.scale + e.onion;
@@ -1603,20 +1608,29 @@ namespace
         }
     }
 
+    // Helper struct to sort indices without moving the heavy Edit objects
+    struct SAPIndex {
+        int id;
+        float minX;
+    };
+
     void computeAllEditIntersections()
     {
-        // float cx = camPos.x * cosf(0.1 * 16.) + camPos.z * -sinf(0.1 * 16.);
-        // float cz = camPos.x * sinf(0.1 * 16.) + camPos.z * cosf(0.1 * 16.);
-        // camPos.x = cx;
-        // camPos.z = cz;
-
         for(auto& e : edits)
         {
             e.nbNeighbours = 0;
         }
 
+        for(int i = 0; i < pparticles->size(); i++)
+        {
+            for(int j : (*pparticleNeighbours)[i])
+            {
+                addNeighbourIfShould(i + 1, j + 1);
+            }
+        }
+
         // naïve O(n²) approach for now
-        for(int i = 1; i < edits.size(); i++)
+        for(int i = 1 + pparticles->size(); i < edits.size(); i++)
         {
             for(int j = i + 1; j < edits.size(); j++)
             {
@@ -1629,7 +1643,7 @@ namespace
         }
 
         const float A_BIT_MORE = 0.08f;
-        for(int i = 1; i < edits.size(); i++)
+        for(int i = 1 + pparticles->size(); i < edits.size(); i++)
         {
             float blend_radius = 1. / edits[i].blendStrength;
             sk::math::vec2 extension[3] = { sk::math::vec2(0., 0.), sk::math::vec2(0., 0.), sk::math::vec2(0., 0.) };
@@ -1638,19 +1652,19 @@ namespace
                 const int k = edits[i].neighbours[j];
 
                 if(edits[i].getPos().x < edits[k].getPos().x) 
-                    extension[0].y = std::min(blend_radius, edits[k].getPos().x - edits[i].getPos().x + A_BIT_MORE);
+                    extension[0].y = std::min(blend_radius, edits[k].getPos().x - edits[i].getPos().x) + A_BIT_MORE;
                 else 
-                    extension[0].x = std::min(blend_radius, edits[i].getPos().x - edits[k].getPos().x + A_BIT_MORE);
+                    extension[0].x = std::min(blend_radius, edits[i].getPos().x - edits[k].getPos().x) + A_BIT_MORE;
 
                 if(edits[i].getPos().y < edits[k].getPos().y) 
-                    extension[1].y = std::min(blend_radius, edits[k].getPos().y - edits[i].getPos().y + A_BIT_MORE);
+                    extension[1].y = std::min(blend_radius, edits[k].getPos().y - edits[i].getPos().y) + A_BIT_MORE;
                 else 
-                    extension[1].x = std::min(blend_radius, edits[i].getPos().y - edits[k].getPos().y + A_BIT_MORE);
+                    extension[1].x = std::min(blend_radius, edits[i].getPos().y - edits[k].getPos().y) + A_BIT_MORE;
 
                 if(edits[i].getPos().z < edits[k].getPos().z) 
-                    extension[2].y = std::min(blend_radius, edits[k].getPos().z - edits[i].getPos().z + A_BIT_MORE);
+                    extension[2].y = std::min(blend_radius, edits[k].getPos().z - edits[i].getPos().z) + A_BIT_MORE;
                 else 
-                    extension[2].x = std::min(blend_radius, edits[i].getPos().z - edits[k].getPos().z + A_BIT_MORE);
+                    extension[2].x = std::min(blend_radius, edits[i].getPos().z - edits[k].getPos().z) + A_BIT_MORE;
             }
             editsBoundingBoxes[i].minX -= extension[0].x; editsBoundingBoxes[i].maxX += extension[0].y;
             editsBoundingBoxes[i].minY -= extension[1].x; editsBoundingBoxes[i].maxY += extension[1].y;
@@ -1674,6 +1688,21 @@ namespace
         ee.mat.albedo = sk::math::vec3(-0.1);
         ee.setPos(sk::math::vec3(-50.0, -0.5, -50.));
         edits.push_back(ee);
+
+        sph::init();
+        sph::getHandles(&pparticles, &pparticleNeighbours);
+        for(int i = 0; i < pparticles->size(); i++)
+        {
+            auto ee = Edit();
+            ee.type = 0;
+            ee.norm = 2;
+            ee.dimensions = sk::math::vec3(0.35);
+            ee.mat.roughness = 0.3;
+            ee.blendStrength = 10.;
+            ee.mat.albedo = sk::math::vec3((rand() % 100) / 100.f, (rand() % 100) / 100.f, (rand() % 100) / 100.f);
+            ee.setPos((*pparticles)[i] + sk::math::vec3(5., 2., 0.));
+            edits.push_back(ee);
+        }
 
         computeBoundingBoxes();
         computeAllEditIntersections();
@@ -1913,7 +1942,7 @@ void sk::end()
 
     device.destroy();
     
-#ifndef NDEBUG
+#ifndef NNDEBUG
     DestroyDebugUtilsMessengerEXT(instance, messenger);
 #endif
     instance.destroySurfaceKHR(surface);

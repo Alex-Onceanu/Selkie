@@ -4,13 +4,18 @@
 #include "math.hpp"
 #include "renderer.hpp"
 #include "editor.hpp"
+#include "sph.hpp"
 
 int main()
 {
     try
     {
+        srand(std::time(nullptr));
         auto window = sk::initWindow(1366, 768);
         auto editor = new Editor(window);
+
+        std::vector<sk::math::vec3>* pparticles;
+        sph::getHandles(&pparticles, nullptr);
 
         auto startTime = std::chrono::high_resolution_clock::now();
         auto prevTime = startTime;
@@ -61,6 +66,18 @@ int main()
                 nbFrames = 0;
                 prevTime = currentTime;
             }
+
+            // std::cout << "Update go " << std::endl;
+            auto a = glfwGetTime();
+            sph::update(elapsedTime);
+            auto b = glfwGetTime();
+            // std::cout << "Time for sph update : " << (b - a) * 1000.f << "ms" << std::endl;
+            // std::cout << "Set pos go " << std::endl;
+            for(int i = 0; i < pparticles->size(); ++i)
+            {
+                sk::edit::setPos(1 + i, (*pparticles)[i] + sk::math::vec3(5., 0.5, 0.));
+            }
+            // std::cout << "Set pos ok " << std::endl;
 
             int digitPressed = -1;
             editor->update(digitPressed);
