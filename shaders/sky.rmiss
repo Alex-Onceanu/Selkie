@@ -1,7 +1,11 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
-#include "main_payload.glsl"
+#include "util.glsl"
+
+layout(push_constant) uniform PushConstants {
+    float time;
+};
 
 layout(location = 0) rayPayloadInEXT payload_t payload;
 

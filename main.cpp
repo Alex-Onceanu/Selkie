@@ -1,5 +1,6 @@
 #include <iostream>
 #include <chrono>
+#include <fstream>
 
 #include "math.hpp"
 #include "renderer.hpp"

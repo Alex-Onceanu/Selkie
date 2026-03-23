@@ -2,29 +2,58 @@
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_debug_printf : enable
 
-#include "constants.glsl"
-#include "edits_ssbo.glsl"
+#include "util.glsl"
 #include "sdfs.glsl"
+
+hitAttributeEXT hitInfo_t hitInfo;
+
+layout(set = 0, binding = 2, std430) buffer ssbo_t {
+    edit_t edits[];
+} ssbo;
+
+float map(const vec3 p)
+{
+    return sdf(p, ssbo.edits[gl_PrimitiveID].type, ssbo.edits[gl_PrimitiveID].pos, ssbo.edits[gl_PrimitiveID].scale);
+}
+
+// central differences
+vec3 computeNormal(const vec3 p)
+{
+    const float eps = 1e-4;
+    const vec2 h = vec2(eps, 0);
+    return normalize( vec3(map(p+h.xyy) - map(p-h.xyy),
+                           map(p+h.yxy) - map(p-h.yxy),
+                           map(p+h.yyx) - map(p-h.yyx) ) );
+}
 
 void main()
 {
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
 
+    float shadow = 1.;
     float t = 0.;
     for(int i = 0; i < MAX_IT; i++)
     {
-        float safeDist = sdf(p, eSSBO.edits[gl_PrimitiveID].type, eSSBO.edits[gl_PrimitiveID].pos, eSSBO.edits[gl_PrimitiveID].scale);
+        float safeDist = map(p);
+        shadow = min(shadow, 32.0 * safeDist / t);
 
-        if(t > gl_RayTmaxEXT) return;
+        if(t > gl_RayTmaxEXT) break;
         
         if(safeDist <= gl_RayTminEXT)
         {
+            hitInfo.normal = computeNormal(p);
+            hitInfo.shadow = shadow;
             reportIntersectionEXT(t, 0U);
             return;
         }
 
         p += rd * safeDist;
         t += safeDist;
+    }
+    if((gl_IncomingRayFlagsEXT & gl_RayFlagsSkipClosestHitShaderEXT) != 0U)
+    {
+        hitInfo.shadow = shadow;
+        reportIntersectionEXT(gl_RayTmaxEXT - 4., 1U);
     }
 }

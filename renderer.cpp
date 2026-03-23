@@ -90,13 +90,6 @@ namespace
         Edit& setType(      const int type_)            { type = type_; return *this; }
         Edit& setScale(     const math::vec3 scale_)    { scale = scale_; return *this; }
     };
-
-    struct Merge {
-        int first;
-        int second;
-
-        Merge(unsigned int i, unsigned int j) : first(i), second(j) {}
-    };
 };
 
 // attributs
@@ -154,11 +147,8 @@ namespace
     std::vector<Buffer> bindingTableBufs{};
 
     std::vector<Edit> edits{}; // TODO : allocate this on the heap
-    std::vector<Merge> merges{};
     std::vector<vk::AabbPositionsKHR> editsBoundingBoxes{};
-    std::vector<vk::AabbPositionsKHR> mergesBoundingBoxes{};
     std::vector<Buffer> edits_ssbos{};
-    std::vector<Buffer> merges_ssbos{};
 
     vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout descriptorSetLayout;
@@ -761,14 +751,13 @@ namespace
          * - un Group pour rgen, un pour rmiss (sont eGeneral), puis 1 par ~ type d'objet
          * - chaque type d'objet aura son Group contenant un intersection, un closest hit et un any hit
          */
-
         std::vector<std::string> filePaths = {
             "main.rgen",
             "sky.rmiss",
             "simple.rint",
             "simple.rchit",
-            "double.rint",
-            "double.rchit"
+            "shadow.rahit",
+            "noop.rmiss"
         };
 
         vk::ShaderStageFlagBits stageTypes[] = { 
@@ -776,8 +765,8 @@ namespace
             vk::ShaderStageFlagBits::eMissKHR,
             vk::ShaderStageFlagBits::eIntersectionKHR,
             vk::ShaderStageFlagBits::eClosestHitKHR,
-            vk::ShaderStageFlagBits::eIntersectionKHR,
-            vk::ShaderStageFlagBits::eClosestHitKHR
+            vk::ShaderStageFlagBits::eAnyHitKHR,
+            vk::ShaderStageFlagBits::eMissKHR
         };
 
         std::vector<vk::PipelineShaderStageCreateInfo> stages;
@@ -812,21 +801,21 @@ namespace
             .setAnyHitShader(vk::ShaderUnusedKHR)
             .setIntersectionShader(vk::ShaderUnusedKHR));
 
+        // this rmiss is a noop
+        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
+            .setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+            .setGeneralShader(5)
+            .setClosestHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setIntersectionShader(vk::ShaderUnusedKHR));
+
         // hit group : même groupe pour tous les objets (ray marching en rint + matériau pbr en rchit)
         shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
             .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
             .setGeneralShader(vk::ShaderUnusedKHR)
             .setClosestHitShader(3)
-            .setAnyHitShader(vk::ShaderUnusedKHR)
+            .setAnyHitShader(4)
             .setIntersectionShader(2));
-
-        // Objet à part pour les smooth mix entre deux objets
-        shaderGroups.push_back(vk::RayTracingShaderGroupCreateInfoKHR()
-            .setType(vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
-            .setGeneralShader(vk::ShaderUnusedKHR)
-            .setClosestHitShader(5)
-            .setAnyHitShader(vk::ShaderUnusedKHR)
-            .setIntersectionShader(4));
 
         vk::PushConstantRange pushRange;
         pushRange.setOffset(0);
@@ -894,8 +883,8 @@ namespace
 
         auto instanceGeometry = vk::AccelerationStructureGeometryKHR()
             .setGeometryType(vk::GeometryTypeKHR::eInstances)
-            .setGeometry({ .instances = instancesData })
-            .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+            .setGeometry({ .instances = instancesData });
+            // .setFlags(vk::GeometryFlagBitsKHR::eOpaque);
 
         auto buildInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
             .setType(vk::AccelerationStructureTypeKHR::eTopLevel)
@@ -1093,17 +1082,13 @@ namespace
     void createAccelerationStructures()
     {
         // {{hitgroup1::sphere, hitgroup1::box, ...}, {hitgroup2::sphere, hitgroup2::box, ...}, ...}
-        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs(2);
+        std::vector<std::vector<vk::AabbPositionsKHR>> aabbs(1);
 
         for(const auto e : editsBoundingBoxes)
         {
             aabbs[0].push_back(e);
         }
-        for(const auto m : mergesBoundingBoxes)
-        {
-            aabbs[1].push_back(m);
-        }
-        
+    
         // le blas ne peut être construit qu'une fois que copyBuffer est fini, il faut une barrière
         std::vector<vk::BufferMemoryBarrier> barriers{};
         std::vector<uint32_t> primitiveCounts{};
@@ -1165,8 +1150,8 @@ namespace
 
             geometries.push_back(vk::AccelerationStructureGeometryKHR()
                 .setGeometryType(vk::GeometryTypeKHR::eAabbs)
-                .setGeometry({.aabbs = tmpAabbData})
-                .setFlags(vk::GeometryFlagBitsKHR::eOpaque));
+                .setGeometry({.aabbs = tmpAabbData}));
+                // .setFlags(vk::GeometryFlagBitsKHR::eOpaque));
         }
 
         // remplir blasBuf, blasBufMemory, blasBufDeviceAddress, blasAccel, blasDescInfo
@@ -1330,7 +1315,6 @@ namespace
     void computeBoundingBoxes()
     {
         const float k = 1. / 8.; // TODO : put this smin constant in edits
-        std::vector<vk::AabbPositionsKHR> hitBoxForIntersections{}; // larger bounding box for edits, to detect when to add a "merge" object
         for(const auto& e : edits)
         {
             math::vec3 p = e.pos;
@@ -1360,25 +1344,6 @@ namespace
             }
             // s.x += k; s.y += k; s.z += k;
             editsBoundingBoxes.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
-
-            s = math::vec3(0.76, 0.76, 0.76);
-            hitBoxForIntersections.push_back({p.x-s.x,p.y-s.y,p.z-s.z,p.x+s.x,p.y+s.y,p.z+s.z});
-        }
-
-        // naïve O(n²) approach for now
-        for(int i = 0; i < edits.size(); i++)
-        {
-            for(int j = i + 1; j < edits.size(); j++)
-            {
-                if(areBoxesIntersecting(hitBoxForIntersections[i], hitBoxForIntersections[j]))
-                {
-                    merges.emplace_back(i, j);
-
-                    math::vec3 ct = (edits[i].pos + edits[j].pos) * 0.5f;
-                    float sz = (edits[i].pos - edits[j].pos).length() / 2.f;
-                    mergesBoundingBoxes.push_back({ct.x-sz,ct.y-sz,ct.z-sz,ct.x+sz,ct.y+sz,ct.z+sz});
-                }
-            }
         }
     }
 
@@ -1386,55 +1351,41 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 1.0}));
-        // edits.push_back(Edit().setPos(math::vec3( 0.0, 4.4,  0.0)).setType(2).setScale(math::vec3(1.6, 0.6, 0.)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 0.1}));
+        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3( 0.0, -0.9,  0.0)).setType(1).setScale(math::vec3(20.0, 1.0, 20.0)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 1.0}));
 
-        const int s = 5;
-        const float sc = 2.;
-        for(int z = 0; z < s; z++)
-        {
-            for(int y = 0; y < s; y++)
-            {
-                for(int x = 0; x < s; x++)
-                {
-                    edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,1.5/5.,1.5/5.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
-                }
-            }
-        }
+        // const int s = 5;
+        // const float sc = 2.;
+        // for(int z = 0; z < s; z++)
+        // {
+        //     for(int y = 0; y < s; y++)
+        //     {
+        //         for(int x = 0; x < s; x++)
+        //         {
+        //             edits.push_back(Edit().setPos(math::vec3(-sc+2.*sc*x/s, sc/2.+2.*sc*y/s, -sc+2.*sc*z/s )).setType(0).setScale(math::vec3(1.5/5.,1.5/5.,1.5/5.)).setMaterial({.albedo = math::vec3((float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f, (float)(rand() % 100) / 100.f), .roughness = 0.95}));
+        //         }
+        //     }
+        // }
 
         computeBoundingBoxes(); // these need to be updated whenever there is a change in the edit's size or rotation
         // TODO : this should be done each frame in recordCommandBuffer (for now the BLAS is never rebuilt)
 
         size_t eBufSize = edits.size() * sizeof(edits[0]);
-        size_t mBufSize = merges.size() * sizeof(merges[0]);
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
         {
-            {
-                auto newBuf = createBuffer(eBufSize, 
-                                            vk::BufferUsageFlagBits::eStorageBuffer |
-                                            vk::BufferUsageFlagBits::eShaderDeviceAddressKHR, 
-                                            vk::MemoryPropertyFlagBits::eHostCoherent);
+            auto newBuf = createBuffer(eBufSize, 
+                                        vk::BufferUsageFlagBits::eStorageBuffer |
+                                        vk::BufferUsageFlagBits::eShaderDeviceAddressKHR, 
+                                        vk::MemoryPropertyFlagBits::eHostCoherent);
 
-                void* mapped = device.mapMemory(newBuf.memory, 0, eBufSize);
-                memcpy(mapped, edits.data(), eBufSize);
-                device.unmapMemory(newBuf.memory);
-
-                edits_ssbos.push_back(newBuf);
-            }
-
-            auto newBuf = createBuffer(mBufSize, 
-                            vk::BufferUsageFlagBits::eStorageBuffer |
-                            vk::BufferUsageFlagBits::eShaderDeviceAddressKHR, 
-                            vk::MemoryPropertyFlagBits::eHostCoherent);
-
-            void* mapped = device.mapMemory(newBuf.memory, 0, mBufSize);
-            memcpy(mapped, merges.data(), mBufSize);
+            void* mapped = device.mapMemory(newBuf.memory, 0, eBufSize);
+            memcpy(mapped, edits.data(), eBufSize);
             device.unmapMemory(newBuf.memory);
 
-            merges_ssbos.push_back(newBuf);
+            edits_ssbos.push_back(newBuf);
         }
     }
 
@@ -1443,7 +1394,6 @@ namespace
         bindings.push_back({0, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR});   // Binding = 0 : TLAS
         bindings.push_back({1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR});                                                         // Binding = 1 : Storage image
         bindings.push_back({2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR});                                                    // Binding = 2 : Edits
-        bindings.push_back({3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR});                                                    // Binding = 3 : Merges
 
         auto layoutInfo = vk::DescriptorSetLayoutCreateInfo()
             .setBindings(bindings);
@@ -1456,7 +1406,6 @@ namespace
         std::vector<vk::DescriptorPoolSize> poolSizes{
             {vk::DescriptorType::eAccelerationStructureKHR, NB_FRAMES_IN_FLIGHT},
             {vk::DescriptorType::eStorageImage, NB_FRAMES_IN_FLIGHT},
-            {vk::DescriptorType::eStorageBuffer, NB_FRAMES_IN_FLIGHT},
             {vk::DescriptorType::eStorageBuffer, NB_FRAMES_IN_FLIGHT}
         };
 
@@ -1505,25 +1454,26 @@ namespace
         }
 
         {
-            auto rmissTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+            auto rmissTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
                                                      | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                             vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            void* mapped = device.mapMemory(rmissTable.memory, 0, stride);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rmissTable.memory, 0, 2 * stride);
             memcpy(mapped, handleStorage.data() + 1 * handleSize, handleSize);
-            bindingTableBufs.push_back(rmissTable);
-
+            memcpy(mapped + stride, handleStorage.data() + 2 * handleSize, handleSize);
             device.unmapMemory(rmissTable.memory);
+
+            bindingTableBufs.push_back(rmissTable);
         }
 
         {
-            auto rhitTable = createBuffer(2 * stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
+            auto rhitTable = createBuffer(stride, vk::BufferUsageFlagBits::eShaderBindingTableKHR 
                                                     | vk::BufferUsageFlagBits::eShaderDeviceAddress,
                                           vk::MemoryPropertyFlagBits::eDeviceLocal);
             
-            uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, 2 * stride);
-            memcpy(mapped, handleStorage.data() + 2 * handleSize, handleSize);
-            memcpy(mapped + stride, handleStorage.data() + 3 * handleSize, handleSize);
+            uint8_t* mapped = (uint8_t*)device.mapMemory(rhitTable.memory, 0, stride);
+            memcpy(mapped, handleStorage.data() + 3 * handleSize, handleSize);
+            // allouer un rhitTable + grand si on a plusieurs "geometries" (donc plusieurs refs à ce hitGroup)
             bindingTableBufs.push_back(rhitTable);
 
             device.unmapMemory(rhitTable.memory);
@@ -1531,7 +1481,7 @@ namespace
 
         sbtRegions.push_back({bindingTableBufs[0].deviceAddress, stride, handleSize});
         sbtRegions.push_back({bindingTableBufs[1].deviceAddress, stride, handleSize});
-        sbtRegions.push_back({bindingTableBufs[2].deviceAddress, stride, 2 * handleSize});
+        sbtRegions.push_back({bindingTableBufs[2].deviceAddress, stride, handleSize});
 
         std::vector<vk::DescriptorSetLayout> layouts(NB_FRAMES_IN_FLIGHT, descriptorSetLayout);
         auto descSetInfo = vk::DescriptorSetAllocateInfo()
@@ -1552,8 +1502,8 @@ namespace
 
             writes[0].setPNext(tlasDescInfo);
             writes[1].setImageInfo(rtDescImageInfos[frame]);
-            writes[2].setBufferInfo(vk::DescriptorBufferInfo().setBuffer(edits_ssbos[frame].buf).setOffset(0).setRange(edits.size() * sizeof(edits[0])));
-            writes[3].setBufferInfo(vk::DescriptorBufferInfo().setBuffer(merges_ssbos[frame].buf).setOffset(0).setRange(merges.size() * sizeof(merges[0])));
+            auto editBufInfo = vk::DescriptorBufferInfo().setBuffer(edits_ssbos[frame].buf).setOffset(0).setRange(edits.size() * sizeof(edits[0]));
+            writes[2].setBufferInfo(editBufInfo);
 
             device.updateDescriptorSets(writes, nullptr);
         }
@@ -1627,7 +1577,6 @@ void sk::end()
     for(int f = 0; f < NB_FRAMES_IN_FLIGHT; f++)
     {
         edits_ssbos[f].destroy();
-        merges_ssbos[f].destroy();
         device.destroyFence(readyForNextFrameFences[f]);
         device.destroySemaphore(imageAvailableSemaphores[f]);
         device.destroyImageView(rtImageViews[f]);
