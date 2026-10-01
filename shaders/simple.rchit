@@ -21,18 +21,17 @@ layout(location = 1) rayPayloadEXT shadowPayload_t shadowPayload;
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 
-/* TODO : change sbtRecordOffset 
-        void traceRayEXT(accelerationStructureEXT topLevel,
-                   uint rayFlags,
-                   uint cullMask,
-                   uint sbtRecordOffset,
-                   uint sbtRecordStride,
-                   uint missIndex,
-                   vec3 origin,
-                   float Tmin,
-                   vec3 direction,
-                   float Tmax,
-                   int payload);
+/* void traceRayEXT(accelerationStructureEXT topLevel,
+                    uint rayFlags,
+                    uint cullMask,
+                    uint sbtRecordOffset,
+                    uint sbtRecordStride,
+                    uint missIndex,
+                    vec3 origin,
+                    float Tmin,
+                    vec3 direction,
+                    float Tmax,
+                    int payload);
 */
 float shadowRay(const vec3 ro, const vec3 rd)
 {
@@ -68,6 +67,6 @@ void main()
 {
     const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
     vec3 lp = LIGHTPOS;
-    lp.xz *= rot2D(-2.7 * time);
+    // lp.xz *= rot2D(-2.7 * time);
     payload.hitColor = sphereColor(p, gl_WorldRayDirectionEXT, hitInfo.normal, eSSBO.edits[gl_PrimitiveID].material, lp);
 }

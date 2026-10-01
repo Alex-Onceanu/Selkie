@@ -90,6 +90,11 @@ namespace
         Edit& setType(      const int type_)            { type = type_; return *this; }
         Edit& setScale(     const math::vec3 scale_)    { scale = scale_; return *this; }
     };
+
+    struct PushConstants {
+        float t;
+        uint32_t accumulationFrame;
+    };
 };
 
 // attributs
@@ -122,9 +127,10 @@ namespace
     vk::CommandPool commandPool;
     std::vector<vk::CommandBuffer> commandBuffers;
 
-    std::vector<vk::DeviceMemory> rtImageMemories;
-    std::vector<vk::Image> rtImages;
-    std::vector<vk::ImageView> rtImageViews;
+    // We only need one accumulation image across all frames in flight to prevent ping-ponging
+    vk::DeviceMemory accumulationImageMemory;
+    vk::Image accumulationImage;
+    vk::ImageView accumulationImageView;
     std::vector<vk::DescriptorImageInfo> rtDescImageInfos{};
 
     Buffer tlasBufs;
@@ -163,6 +169,7 @@ namespace
 
     int currentFrame;
     uint32_t currentSwapChainImage;
+    uint32_t accumulationFrame = 0;
     bool windowResized;
 
     const std::vector<const char*> deviceRequiredExtensions = {
@@ -603,60 +610,61 @@ namespace
 
     void createRTOutputImages()
     {
+        // 32-bit floating point format for HDR accumulation without banding
+        const auto format = vk::Format::eR32G32B32A32Sfloat;
+        auto imageInfo = vk::ImageCreateInfo()
+            .setImageType(vk::ImageType::e2D)
+            .setExtent({RT_WIDTH, RT_HEIGHT, 1})
+            .setMipLevels(1)
+            .setArrayLayers(1)
+            .setFormat(format)
+            .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc);
+        
+        accumulationImage = device.createImage(imageInfo);
+        
+        vk::MemoryRequirements requirements = device.getImageMemoryRequirements(accumulationImage);
+        uint32_t memoryTypeIndex = findMemoryType(requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        auto memoryInfo = vk::MemoryAllocateInfo()
+            .setAllocationSize(requirements.size)
+            .setMemoryTypeIndex(memoryTypeIndex);
+        accumulationImageMemory = device.allocateMemory(memoryInfo);
+        
+        device.bindImageMemory(accumulationImage, accumulationImageMemory, 0);
+        
+        auto imageViewInfo = vk::ImageViewCreateInfo()
+            .setImage(accumulationImage)
+            .setViewType(vk::ImageViewType::e2D)
+            .setFormat(format)
+            .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+
+        accumulationImageView = device.createImageView(imageViewInfo);
+        
+        auto accumulationDescImageInfo = vk::DescriptorImageInfo()
+            .setImageView(accumulationImageView)
+            .setImageLayout(vk::ImageLayout::eGeneral);
+        
+        // On a besoin de créer un command buffer ici, pour qu'au moment où le gpu est prêt on fasse passer cet imageView de eUndefined à eGeneral
+        auto commandBufferInfo = vk::CommandBufferAllocateInfo()
+            .setCommandPool(commandPool)
+            .setCommandBufferCount(1);
+        
+        vk::CommandBuffer commandBuffer = device.allocateCommandBuffers(commandBufferInfo).front();
+
+        commandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        setImageLayout(commandBuffer, accumulationImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+        commandBuffer.end();
+        
+        vk::SubmitInfo submitInfo;
+        submitInfo.setCommandBuffers(commandBuffer);
+        graphicsQueue.submit(submitInfo);
+        graphicsQueue.waitIdle();
+
+        device.freeCommandBuffers(commandPool, commandBuffer);
+        
+        // Populate the descriptors for all frames in flight with the exact same image to avoid ping-ponging
         for(int i = 0; i < NB_FRAMES_IN_FLIGHT; i++)
         {
-            const auto format = vk::Format::eR8G8B8A8Unorm;
-            auto imageInfo = vk::ImageCreateInfo()
-                .setImageType(vk::ImageType::e2D)
-                .setExtent({RT_WIDTH, RT_HEIGHT, 1})
-                .setMipLevels(1)
-                .setArrayLayers(1)
-                .setFormat(format)
-                .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc);
-            auto tmpImage = device.createImage(imageInfo);
-            
-            vk::MemoryRequirements requirements = device.getImageMemoryRequirements(tmpImage);
-            uint32_t memoryTypeIndex = findMemoryType(requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
-            auto memoryInfo = vk::MemoryAllocateInfo()
-                .setAllocationSize(requirements.size)
-                .setMemoryTypeIndex(memoryTypeIndex);
-            auto tmpMemory = device.allocateMemory(memoryInfo);
-            
-            device.bindImageMemory(tmpImage, tmpMemory, 0);
-            
-            auto imageViewInfo = vk::ImageViewCreateInfo()
-                .setImage(tmpImage)
-                .setViewType(vk::ImageViewType::e2D)
-                .setFormat(format)
-                .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
-
-            auto tmpView = device.createImageView(imageViewInfo);
-            
-            rtDescImageInfos.push_back(vk::DescriptorImageInfo()
-                .setImageView(tmpView)
-                .setImageLayout(vk::ImageLayout::eGeneral));
-            
-            // On a besoin de créer un command buffer ici, pour qu'au moment où le gpu est prêt on fasse passer cet imageView de eUndefined à eGeneral
-            auto commandBufferInfo = vk::CommandBufferAllocateInfo()
-                .setCommandPool(commandPool)
-                .setCommandBufferCount(1);
-            
-            vk::CommandBuffer commandBuffer = device.allocateCommandBuffers(commandBufferInfo).front();
-
-            commandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-            setImageLayout(commandBuffer, tmpImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-            commandBuffer.end();
-            
-            vk::SubmitInfo submitInfo;
-            submitInfo.setCommandBuffers(commandBuffer);
-            graphicsQueue.submit(submitInfo);
-            graphicsQueue.waitIdle();
-
-            device.freeCommandBuffers(commandPool, commandBuffer);
-            
-            rtImages.push_back(tmpImage);
-            rtImageMemories.push_back(tmpMemory);
-            rtImageViews.push_back(tmpView);
+            rtDescImageInfos.push_back(accumulationDescImageInfo);
         }
     }
     
@@ -724,6 +732,9 @@ namespace
 
         device.destroySwapchainKHR(oldOne);
         createImageViews();
+
+        // Reset accumulation frame on resize to avoid garbage
+        accumulationFrame = 0;
     }
 
     // Objet vulkan contenant le bytecode d'un shader en SPIR-V
@@ -819,7 +830,7 @@ namespace
 
         vk::PushConstantRange pushRange;
         pushRange.setOffset(0);
-        pushRange.setSize(sizeof(float));
+        pushRange.setSize(sizeof(PushConstants));
         pushRange.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eMissKHR | vk::ShaderStageFlagBits::eClosestHitKHR);
 
         // Ici on envoie aux shaders des valeurs pour les "uniform" (push constants et descriptor sets)
@@ -916,10 +927,11 @@ namespace
             nullptr
         );
 
-        commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eRaygenKHR, 0, sizeof(float), &t);
+        PushConstants pc = { t, accumulationFrame };
+        commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eRaygenKHR, 0, sizeof(PushConstants), &pc);
         commandBuffer.traceRaysKHR(sbtRegions[0], sbtRegions[1], sbtRegions[2], {}, RT_WIDTH, RT_HEIGHT, 1u);
 
-        vk::Image srcImage = rtImages[currentFrame];
+        vk::Image srcImage = accumulationImage;
         vk::Image dstImage = swapChainImages[currentSwapChainImage];
 
         setImageLayout(commandBuffer, srcImage, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal, 
@@ -944,7 +956,7 @@ namespace
             vk::Filter::eLinear
         );
 
-        // TODO : enlever spécifiquement ce setImageLayout, je crois qu'il est useless
+        // Crucial layout transition so the image can be reused as storage next frame 
         setImageLayout(commandBuffer, srcImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral,
             vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eShaderWrite, 
             vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eRayTracingShaderKHR);
@@ -1579,10 +1591,12 @@ void sk::end()
         edits_ssbos[f].destroy();
         device.destroyFence(readyForNextFrameFences[f]);
         device.destroySemaphore(imageAvailableSemaphores[f]);
-        device.destroyImageView(rtImageViews[f]);
-        device.freeMemory(rtImageMemories[f]);
-        device.destroyImage(rtImages[f]);
     }
+
+    device.destroyImageView(accumulationImageView);
+    device.freeMemory(accumulationImageMemory);
+    device.destroyImage(accumulationImage);
+
     blasBuf.destroy();
     tlasBufs.destroy();
     device.destroyAccelerationStructureKHR(blasAccel);
@@ -1700,4 +1714,5 @@ void sk::draw(float t)
     }
 
     currentFrame = (1 + currentFrame) % NB_FRAMES_IN_FLIGHT;
+    accumulationFrame++;
 }
