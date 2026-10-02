@@ -97,5 +97,5 @@ void main()
     // payload.hitColor = skyColor(gl_WorldRayDirectionEXT);
     payload.hitColor = vec3(0.5, 0.78, 0.89);
     // payload.hitColor = vec3(1.0);
-    payload.energy = 1.0;
+    payload.energy = 0.1;
 }

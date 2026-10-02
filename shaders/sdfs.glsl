@@ -1,6 +1,13 @@
 #ifndef SDFS_H
 #define SDFS_H
 
+float smin( float a, float b, float k )
+{
+    k *= 1.0;
+    float r = exp2(-a/k) + exp2(-b/k);
+    return -k*log2(r);
+}
+
 float sdfSphere(const vec3 p, const float radius)
 {
     return length(p) - radius;

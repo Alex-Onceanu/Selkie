@@ -1369,7 +1369,7 @@ namespace
         edits.push_back(Edit().setPos(math::vec3(+1.4, 0.8, 1.0)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}).setmilkyness(0.0));
         edits.push_back(Edit().setPos(math::vec3( 3.8, 6.7, 0.8)).setType(0).setScale(math::vec3(1.7,1.7,1.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = -20.0}).setmilkyness(1.0));
         edits.push_back(Edit().setPos(math::vec3(-2.8, 10.0, -16.7)).setType(0).setScale(math::vec3(5.0, 5.0, 5.0)).setMaterial({ .albedo = math::vec3(0.8, 0.8, 1.0), .roughness = 0.0 }).setmilkyness(1.0));
-        edits.push_back(Edit().setPos(math::vec3( 0.0, -1.0, 0.0)).setType(1).setScale(math::vec3(20.0, 1.0, 20.0)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 1.0}).setmilkyness(0.0));
+        edits.push_back(Edit().setPos(math::vec3( 0.0, 0.0, 0.0)).setType(1).setScale(math::vec3(20.0, 1.0, 20.0)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 1.0}).setmilkyness(0.0));
 
         // const int s = 5;
         // const float sc = 2.;

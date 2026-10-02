@@ -24,10 +24,15 @@ layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
 
 float rand(float co) { return fract(sin(co*(91.3458)) * 47453.5453); }
 
-float randn(float co) {
-    float u1 = rand(co);
-    float u2 = rand(co + 1.0);
-    return sqrt(-2.0 * log(u1)) * cos(6.28318530718 * u2);
+vec3 uniformRandomDirection(vec3 seed) {
+    float u = rand(seed.x);
+    float v = rand(seed.y);
+    float theta = 2.0 * 3.14159265359 * u;
+    float phi = acos(2.0 * v - 1.0);
+    float x = sin(phi) * cos(theta);
+    float y = sin(phi) * sin(theta);
+    float z = cos(phi);
+    return vec3(x, y, z);
 }
 
 /* void traceRayEXT(accelerationStructureEXT topLevel,
@@ -45,6 +50,7 @@ float randn(float co) {
 vec4 sphereColor(const vec3 p, const vec3 rd, const vec3 normal, const material_t mat, const float milkyness, const vec3 lightPos)
 {
     vec3 albedo = mat.albedo;
+
     if(eSSBO.edits[gl_PrimitiveID].type == 1)
     {
         float checker = mod(floor(p.x * 2.0) + floor(p.z * 2.0), 2.0);
@@ -53,27 +59,34 @@ vec4 sphereColor(const vec3 p, const vec3 rd, const vec3 normal, const material_
             albedo = vec3(0.8, 0.2, 0.2);
         }
     }
-    if(mat.roughness < 0.0)
+
+    if(mat.roughness < -0.0001)
     {
         return vec4(albedo, -mat.roughness);
     }
-    if(payload.lifetime < 6)
-    {
-        vec3 randomDir = normalize(vec3(randn(p.x + time), randn(p.y + time), randn(p.z + time)) * 2.0 - 1.0);
-        if(dot(normal, randomDir) < 0.0) randomDir = -randomDir;
-        float isMilky = rand(p.x + p.y + p.z + time) > milkyness ? 1.0 : 0.0;
-        vec3 newDir = mix(normal, randomDir, mat.roughness * isMilky);
-        albedo = mix(albedo, vec3(1.0), milkyness);
 
-        payload.lifetime++;
-        traceRayEXT(bvh, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, p + 0.001 * normal, T_MIN, newDir, T_MAX, 0);
+    const int MAX_BOUNCES = 2;
 
-        return vec4(payload.hitColor * albedo, payload.energy);  
-    }
-    else
+    if(payload.lifetime >= MAX_BOUNCES)
     {
         return vec4(albedo, 0.0);
     }
+
+    albedo = mix(albedo, vec3(1.0), milkyness);
+
+    vec3 randomDir = uniformRandomDirection(payload.seed);
+    if(dot(normal, randomDir) < 0.0) randomDir = -randomDir;
+
+    float isMilky = fract(sin(dot(payload.seed.xy, vec2(12.9898, 78.233))) * 43758.5453) > milkyness ? 1.0 : 0.0;
+
+    vec3 newDir = normalize(mix(normal, randomDir, mat.roughness * isMilky));
+
+    payload.lifetime++;
+
+    traceRayEXT(bvh, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, p, 0.001, newDir, T_MAX, 0);
+    vec3 finalColor = payload.hitColor * albedo;
+    
+    return vec4(finalColor, payload.energy);
 }
 
 void main()

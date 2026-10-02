@@ -19,6 +19,7 @@ struct payload_t {
     vec3 hitColor;
     int lifetime;
     float energy;
+    vec3 seed;
 };
 
 struct shadowPayload_t {

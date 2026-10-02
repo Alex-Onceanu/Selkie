@@ -26,11 +26,54 @@ vec3 computeNormal(const vec3 p)
                            map(p+h.yyx) - map(p-h.yyx) ) );
 }
 
+// Returns .x > .y if no intersection
+vec2 raySphere(vec3 rayPos, vec3 rayDir, vec3 sphPos, float radius)
+{
+    vec3 p = rayPos - sphPos;
+    float delta = 4. * (dot(p, rayDir) * dot(p, rayDir) - dot(rayDir, rayDir) * (dot(p, p) - radius * radius));
+    if(delta < 0.) return vec2(1e5, -1e5);
+    return vec2((-2. * dot(p, rayDir) - sqrt(delta)) / (2. * dot(rayDir, rayDir)), 
+                (-2. * dot(p, rayDir) + sqrt(delta)) / (2. * dot(rayDir, rayDir)));
+}
+
+float rayPlane(vec3 rayPos, vec3 rayDir, vec3 planePos)
+{
+    float denom = rayDir.y;
+    if(abs(denom) < 1e-6) return 1e5; // parallel
+    float t = (planePos - rayPos).y / denom;
+    return t;
+}
+
 void main()
 {
     vec3 p = gl_WorldRayOriginEXT;
     vec3 rd = normalize(gl_WorldRayDirectionEXT);
+    vec3 center = ssbo.edits[gl_PrimitiveID].pos;
+    
 
+    if(ssbo.edits[gl_PrimitiveID].type == 0) 
+    {
+        vec2 hit = raySphere(p, rd, center, ssbo.edits[gl_PrimitiveID].scale.x);
+        if(hit.x <= hit.y && hit.x >= gl_RayTminEXT && hit.x <= gl_RayTmaxEXT)
+        {
+            p += rd * hit.x;
+            hitInfo.normal = normalize(p - center);
+            reportIntersectionEXT(hit.x, 0U);
+        }
+    }
+    else
+    {
+        float hit2 = rayPlane(p, rd, center);
+        if(hit2 >= gl_RayTminEXT && hit2 <= gl_RayTmaxEXT)
+        {
+            p += rd * hit2;
+            hitInfo.normal = vec3(0., 1., 0.);
+            reportIntersectionEXT(hit2, 0U);
+        }
+    }
+
+  
+/*
     float shadow = 1.;
     float t = 0.;
     for(int i = 0; i < MAX_IT; i++)
@@ -56,4 +99,5 @@ void main()
         hitInfo.shadow = shadow;
         reportIntersectionEXT(gl_RayTmaxEXT - 4., 1U);
     }
+    */
 }
