@@ -5,6 +5,7 @@
 
 layout(push_constant) uniform PushConstants {
     float time;
+    uint accumulationFrame;
 };
 
 layout(location = 0) rayPayloadInEXT payload_t payload;
@@ -82,7 +83,7 @@ vec3 skyColor(vec3 d)
     // now we can use the seed to offset the stars for a more "natural" look
     vec2 a = inverseSF(normalize(nd + starsDisplacement * (-1. + 2. * randVector)));
 
-    float dst = (starSize + starSizeVariation * rand1 + starFlickering * rand2 * pow(sin(3. * time * rand3), 5.)) * a.y;
+    float dst = (starSize + starSizeVariation * rand1 + starFlickering * rand2 * pow(sin(3. * 0.0 * rand3), 5.)) * a.y;
 
     float glow = 1. / (0.001 + dst * dst);
     vec3 clr = 1. + 0.6 * randVector;
@@ -93,5 +94,8 @@ vec3 skyColor(vec3 d)
 
 void main()
 {
-    payload.hitColor = skyColor(gl_WorldRayDirectionEXT);
+    // payload.hitColor = skyColor(gl_WorldRayDirectionEXT);
+    payload.hitColor = vec3(0.5, 0.78, 0.89);
+    // payload.hitColor = vec3(1.0);
+    payload.energy = 1.0;
 }

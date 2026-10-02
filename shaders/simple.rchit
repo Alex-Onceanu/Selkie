@@ -9,6 +9,7 @@ hitAttributeEXT hitInfo_t hitInfo;
 
 layout(push_constant) uniform PushConstants {
     float time;
+    uint accumulationFrame;
 };
 
 layout(set = 0, binding = 2, std430) buffer e_ssbo_t {
@@ -20,6 +21,14 @@ layout(location = 1) rayPayloadEXT shadowPayload_t shadowPayload;
 
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
+
+float rand(float co) { return fract(sin(co*(91.3458)) * 47453.5453); }
+
+float randn(float co) {
+    float u1 = rand(co);
+    float u2 = rand(co + 1.0);
+    return sqrt(-2.0 * log(u1)) * cos(6.28318530718 * u2);
+}
 
 /* void traceRayEXT(accelerationStructureEXT topLevel,
                     uint rayFlags,
@@ -33,40 +42,44 @@ layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
                     float Tmax,
                     int payload);
 */
-float shadowRay(const vec3 ro, const vec3 rd)
+vec4 sphereColor(const vec3 p, const vec3 rd, const vec3 normal, const material_t mat, const float milkyness, const vec3 lightPos)
 {
-    // return 1.;
-    // removing the shadow makes the weird 1s lag spike disappear...
-    shadowPayload.shadow = 1.;
-    traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 1, ro, T_MIN, rd, T_MAX, 1);
+    vec3 albedo = mat.albedo;
+    if(eSSBO.edits[gl_PrimitiveID].type == 1)
+    {
+        float checker = mod(floor(p.x * 2.0) + floor(p.z * 2.0), 2.0);
+        if(checker < 1.0)
+        {
+            albedo = vec3(0.8, 0.2, 0.2);
+        }
+    }
+    if(mat.roughness < 0.0)
+    {
+        return vec4(albedo, -mat.roughness);
+    }
+    if(payload.lifetime < 6)
+    {
+        vec3 randomDir = normalize(vec3(randn(p.x + time), randn(p.y + time), randn(p.z + time)) * 2.0 - 1.0);
+        if(dot(normal, randomDir) < 0.0) randomDir = -randomDir;
+        float isMilky = rand(p.x + p.y + p.z + time) > milkyness ? 1.0 : 0.0;
+        vec3 newDir = mix(normal, randomDir, mat.roughness * isMilky);
+        albedo = mix(albedo, vec3(1.0), milkyness);
 
-    return clamp(shadowPayload.shadow, AMBIENT_INTENSITY, 1.);
-}
+        payload.lifetime++;
+        traceRayEXT(bvh, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, p + 0.001 * normal, T_MIN, newDir, T_MAX, 0);
 
-vec3 mirrorRay(const vec3 ro, const vec3 rd)
-{
-    return vec3(1.);
-    // mirrorPayload.nbHits = 0;
-    // traceRayEXT(bvh, gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0, ro + 0.01 * rd, T_MIN, rd, T_MAX, 0);
-    
-    // return mirrorPayload.hitColor;
-}
-
-vec3 sphereColor(const vec3 p, const vec3 rd, const vec3 normal, const material_t mat, const vec3 lightPos)
-{
-    const vec3 toLight = normalize(lightPos - p);
-    const float diffuse = max(AMBIENT_INTENSITY, dot(normal, toLight));
-
-    const float shadow = shadowRay(p, toLight);
-    const vec3 mir = mirrorRay(p, reflect(rd, normal));
-
-    return mix(mir, mat.albedo, mat.roughness) * min(shadow, diffuse);
+        return vec4(payload.hitColor * albedo, payload.energy);  
+    }
+    else
+    {
+        return vec4(albedo, 0.0);
+    }
 }
 
 void main()
 {
     const vec3 p = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT / length(gl_WorldRayDirectionEXT);
-    vec3 lp = LIGHTPOS;
-    // lp.xz *= rot2D(-2.7 * time);
-    payload.hitColor = sphereColor(p, gl_WorldRayDirectionEXT, hitInfo.normal, eSSBO.edits[gl_PrimitiveID].material, lp);
+    vec4 li = sphereColor(p, gl_WorldRayDirectionEXT, hitInfo.normal, eSSBO.edits[gl_PrimitiveID].material, eSSBO.edits[gl_PrimitiveID].milkyness, LIGHTPOS);
+    payload.hitColor = li.rgb;
+    payload.energy = li.a;
 }

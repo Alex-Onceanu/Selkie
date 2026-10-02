@@ -5,41 +5,40 @@
 
 layout(push_constant) uniform PushConstants {
     float time;
-    uint accumulationFrame; // Added to match the C++ PushConstants struct
+    uint accumulationFrame;
 };
 
 layout(location = 0) rayPayloadEXT payload_t payload;
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT bvh;
-layout(set = 0, binding = 1, rgba32f) uniform image2D image; // Updated from rgba8 to rgba32f
+layout(set = 0, binding = 1, rgba32f) uniform image2D image;
 
 void main()
 {
     vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchSizeEXT.xy);
     uv = 2. * uv - 1.;    // uv is in [-1, 1]
     
-    // Using dynamic aspect ratio based on the swapchain/image size
     uv.x *= float(gl_LaunchSizeEXT.x) / float(gl_LaunchSizeEXT.y);
     uv.y = -uv.y;         // x goes right, y goes up, z towards me
 
-    vec3 cameraPos = vec3(0., 2.0, 11.);
+    vec3 cameraPos = vec3(0., 2.0, 10.);
     vec3 rayDir = vec3(uv.x, uv.y, -2. / tan(0.5 * FOV));
-    // cameraPos.xz *= rot2D(0.1 * time);
-    // rayDir.xz *= rot2D(0.1 * time);
 
-    // trace the ray to populate payload.hitColor
+    //cameraPos.xz *= rot2D(time * 0.01);
+    //rayDir.xz *= rot2D(time * 0.01);
+
+    payload.hitColor = vec3(0.0);
+    payload.lifetime = 0;
+    payload.energy = 0.0;
     traceRayEXT(bvh, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, cameraPos, T_MIN, rayDir, T_MAX, 0);
 
     ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
-    vec3 currentColor = payload.hitColor;
+    vec3 currentColor = (payload.hitColor * payload.energy);
 
-    // Accumulation logic: blend current frame with history
     if (accumulationFrame > 0) {
         vec3 previousColor = imageLoad(image, pixel).rgb;
-        
-        // Running average formula
         currentColor = mix(previousColor, currentColor, 1.0 / float(accumulationFrame + 1));
-    }
+    } else currentColor = vec3(0.0);
 
     imageStore(image, pixel, vec4(currentColor, 1.0));
 }

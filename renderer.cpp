@@ -81,7 +81,7 @@ namespace
         int type;
         Material mat;
         math::vec3 scale;
-        int _padding;
+        float milkyness;
         // [...] remember to align to 16 bytes !
 
         Edit() = default;
@@ -89,6 +89,7 @@ namespace
         Edit& setMaterial(  const Material mat_)        { mat = mat_; return *this; }
         Edit& setType(      const int type_)            { type = type_; return *this; }
         Edit& setScale(     const math::vec3 scale_)    { scale = scale_; return *this; }
+        Edit& setmilkyness(const float milkyness_) { milkyness = milkyness_; return *this; }
     };
 
     struct PushConstants {
@@ -843,7 +844,7 @@ namespace
         auto pipelineCreateInfo = vk::RayTracingPipelineCreateInfoKHR()
             .setStages(stages)
             .setGroups(shaderGroups)
-            .setMaxPipelineRayRecursionDepth(3)
+            .setMaxPipelineRayRecursionDepth(10)
             .setLayout(pipelineLayout);
         
         auto pipelineCreation = device.createRayTracingPipelineKHR(nullptr, nullptr, pipelineCreateInfo);
@@ -1363,11 +1364,12 @@ namespace
     {
         // TODO : move this in world.cpp or editor.cpp or something
         edits.clear();
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 1.0}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0, -0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}));
-        edits.push_back(Edit().setPos(math::vec3(-0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}));
-        edits.push_back(Edit().setPos(math::vec3( 0.8, 1.0,  0.8)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = 1.0}));
-        edits.push_back(Edit().setPos(math::vec3( 0.0, -0.9,  0.0)).setType(1).setScale(math::vec3(20.0, 1.0, 20.0)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 1.0}));
+        edits.push_back(Edit().setPos(math::vec3(-1.4, 0.8, 0.0)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 0., 1.), .roughness = 0.0}).setmilkyness(0.0));
+        edits.push_back(Edit().setPos(math::vec3( 0.0, 1.8, -1.6)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(0., 1., 1.), .roughness = 1.0}).setmilkyness(0.8));
+        edits.push_back(Edit().setPos(math::vec3(+1.4, 0.8, 1.0)).setType(0).setScale(math::vec3(0.7,0.7,0.7)).setMaterial({.albedo = math::vec3(1., 1., 0.), .roughness = 1.0}).setmilkyness(0.0));
+        edits.push_back(Edit().setPos(math::vec3( 3.8, 6.7, 0.8)).setType(0).setScale(math::vec3(1.7,1.7,1.7)).setMaterial({.albedo = math::vec3(1., 1., 1.), .roughness = -20.0}).setmilkyness(1.0));
+        edits.push_back(Edit().setPos(math::vec3(-2.8, 10.0, -16.7)).setType(0).setScale(math::vec3(5.0, 5.0, 5.0)).setMaterial({ .albedo = math::vec3(0.8, 0.8, 1.0), .roughness = 0.0 }).setmilkyness(1.0));
+        edits.push_back(Edit().setPos(math::vec3( 0.0, -1.0, 0.0)).setType(1).setScale(math::vec3(20.0, 1.0, 20.0)).setMaterial({.albedo = math::vec3(0.5, 0.3, 0.7), .roughness = 1.0}).setmilkyness(0.0));
 
         // const int s = 5;
         // const float sc = 2.;

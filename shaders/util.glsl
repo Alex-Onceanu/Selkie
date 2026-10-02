@@ -1,6 +1,8 @@
 #ifndef UTIL_GLSL
 #define UTIL_GLSL
 
+#extension GL_EXT_ray_tracing : require
+
 // _________________________________________CONSTANTS_________________________________________
 
 #define FOV (70. * 3.1416 / 180.)
@@ -15,6 +17,8 @@
 
 struct payload_t {
     vec3 hitColor;
+    int lifetime;
+    float energy;
 };
 
 struct shadowPayload_t {
@@ -31,7 +35,7 @@ struct edit_t {
     int type;
     material_t material;
     vec3 scale;
-    int _padding;
+    float milkyness;
     // Should be aligned to 48 bytes (12 + 4 + 16 + 12 + 4 = 48)
 };
 
